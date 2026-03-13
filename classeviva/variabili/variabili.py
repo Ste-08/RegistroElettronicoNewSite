@@ -7,10 +7,20 @@ TEMPO_CONNESSIONE: int = 5400
 
 
 # Constante che indica l'intestazione per le richieste
+# Using more realistic browser headers instead of Android UA which may be blocked
 intestazione: dict[str, str] = {
     "content-type": "application/json",
     "Z-Dev-ApiKey": "Tg1NWEwNGIgIC0K",
-    "User-Agent": "CVVS/std/4.2.3 Android/12"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Origin": "https://web.spaggiari.eu",
+    "Referer": "https://web.spaggiari.eu/",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-origin",
 }
 
 

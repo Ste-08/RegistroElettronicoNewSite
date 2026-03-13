@@ -1,0 +1,527 @@
+from classeviva import Utente
+from datetime import datetime
+import asyncio
+import re
+
+class ClassevivaService:
+    def __init__(self):
+        self.utente = None
+        self.is_logged_in = False
+        self.error_message = None
+
+    async def login(self, username, password):
+        try:
+            self.utente = Utente(username, password)
+            await self.utente.accedi()
+            
+            if not self.utente.stato:
+                self.is_logged_in = False
+                self.error_message = "Login fallito. Controlla le credenziali."
+                return False
+
+            # Force recovery of ID if missing
+            if not self.utente.id:
+                await self.utente.documenti()
+            
+            self.is_logged_in = True
+            self.error_message = None
+            return True
+        except Exception as e:
+            self.is_logged_in = False
+            self.error_message = f"Errore durante il login: {str(e)}"
+            return False
+
+    async def get_agenda(self):
+        if not self.is_logged_in:
+            return []
+        
+        try:
+            dati = await self.utente.agenda()
+            eventi = dati if isinstance(dati, list) else dati.get("agenda", [])
+            
+            if not eventi:
+                return []
+
+            eventi_filtrati = []
+            
+            for ev in eventi:
+                data_str = ev.get("evtDatetimeBegin", "").split("T")[0]
+                if not data_str: continue
+                
+                data_evento = datetime.strptime(data_str, "%Y-%m-%d").date()
+                nota = (ev.get("notes") or "Nessuna nota").strip()
+                note_l = nota.lower()
+                code = (ev.get("evtCode") or ev.get("eventCode") or "").upper()
+                compito_keywords = [
+                    "compit", "verific", "interrog", "test", "eserciz",
+                    "homework", "quiz", "consegna", "da fare", "studio",
+                ]
+                eventi_filtrati.append({
+                    "data": data_evento,
+                    "materia": ev.get("subjectDesc", "N/A"),
+                    "nota": nota,
+                    "inizio": ev.get("evtDatetimeBegin"),
+                    "autore": ev.get("authorName", ""),
+                    "tipo": code or "EVENT",
+                    "is_compito": any(k in note_l for k in compito_keywords) or code in {"COMP", "HW", "HOM", "TASK"},
+                })
+            
+            # Sort by date
+            eventi_filtrati.sort(key=lambda x: (x["data"], x.get("inizio") or ""))
+            return eventi_filtrati
+        except Exception as e:
+            self.error_message = f"Errore nel recupero dell'agenda: {str(e)}"
+            return []
+
+    def _parse_date(self, value):
+        if value is None:
+            return None
+
+        raw = str(value).split("T")[0].strip()
+        if not raw:
+            return None
+
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y%m%d", "%Y/%m/%d", "%d-%m-%Y", "%Y.%m.%d"):
+            try:
+                return datetime.strptime(raw, fmt).date()
+            except ValueError:
+                continue
+
+        return None
+
+    def _to_float(self, value):
+        if value is None:
+            return None
+
+        if isinstance(value, (int, float)):
+            return float(value)
+
+        text = str(value).strip().replace(",", ".")
+
+        # Handle values like 7+, 8-, +6, etc.
+        m = re.fullmatch(r"([+-]?\d+(?:\.\d+)?)([+-])", text)
+        if m:
+            base = float(m.group(1))
+            sign = m.group(2)
+            return base + 0.25 if sign == "+" else base - 0.25
+
+        m_prefix = re.fullmatch(r"([+-])(\d+(?:\.\d+)?)", text)
+        if m_prefix:
+            base = float(m_prefix.group(2))
+            sign = m_prefix.group(1)
+            return base + 0.25 if sign == "+" else base - 0.25
+
+        try:
+            return float(text)
+        except ValueError:
+            return None
+
+    async def get_voti(self, limit=None):
+        if not self.is_logged_in:
+            return []
+
+        try:
+            grades = await self.utente.voti()
+            normalized = []
+
+            for grade in grades or []:
+                date_value = self._parse_date(
+                    grade.get("evtDate")
+                    or grade.get("date")
+                    or grade.get("evtDatetime")
+                )
+
+                display_value = (
+                    grade.get("displayValue")
+                    or grade.get("evtValue")
+                    or grade.get("decimalValue")
+                    or "-"
+                )
+
+                numeric_value = self._to_float(
+                    grade.get("decimalValue")
+                    or grade.get("evtValue")
+                    or grade.get("displayValue")
+                )
+
+                normalized.append(
+                    {
+                        "data": date_value,
+                        "materia": grade.get("subjectDesc") or grade.get("subject") or "Materia",
+                        "voto": str(display_value),
+                        "numero": numeric_value,
+                        "tipo": grade.get("componentDesc") or grade.get("evtCode") or "Valutazione",
+                        "nota": (grade.get("notesForFamily") or grade.get("notes") or "").strip(),
+                    }
+                )
+
+            normalized.sort(
+                key=lambda item: item["data"] if item["data"] is not None else datetime.min.date(),
+                reverse=True,
+            )
+            return normalized if limit is None else normalized[:limit]
+        except Exception as e:
+            self.error_message = f"Errore nel recupero voti: {str(e)}"
+            return []
+
+    async def get_assenze(self, limit=25):
+        if not self.is_logged_in:
+            return []
+
+        try:
+            events = await self.utente.assenze()
+            normalized = []
+
+            for event in events or []:
+                date_value = self._parse_date(
+                    event.get("evtDate")
+                    or event.get("date")
+                    or event.get("evtDatetimeBegin")
+                )
+
+                justified_raw = event.get("isJustified")
+                justified = bool(justified_raw) if isinstance(justified_raw, bool) else str(justified_raw).lower() in {"true", "1", "yes"}
+
+                normalized.append(
+                    {
+                        "data": date_value,
+                        "tipo": event.get("evtCode") or event.get("eventCode") or "Assenza",
+                        "giustificata": justified,
+                        "descrizione": (event.get("reasonDesc") or event.get("statusDesc") or event.get("notes") or "").strip(),
+                    }
+                )
+
+            normalized.sort(
+                key=lambda item: item["data"] if item["data"] is not None else datetime.min.date(),
+                reverse=True,
+            )
+            return normalized[:limit]
+        except Exception as e:
+            self.error_message = f"Errore nel recupero assenze: {str(e)}"
+            return []
+
+    async def get_note(self, limit=20):
+        if not self.is_logged_in:
+            return []
+
+        try:
+            raw_notes = await self.utente.note()
+            normalized = []
+
+            for category, items in (raw_notes or {}).items():
+                if not isinstance(items, list):
+                    continue
+
+                for note in items:
+                    date_value = self._parse_date(
+                        note.get("evtDate")
+                        or note.get("date")
+                        or note.get("evtDatetime")
+                    )
+
+                    normalized.append(
+                        {
+                            "data": date_value,
+                            "categoria": category.replace("_", " ").title(),
+                            "docente": note.get("authorName") or note.get("teacherName") or "Docente",
+                            "testo": (note.get("evtText") or note.get("description") or note.get("notes") or "").strip(),
+                        }
+                    )
+
+            normalized.sort(
+                key=lambda item: item["data"] if item["data"] is not None else datetime.min.date(),
+                reverse=True,
+            )
+            return normalized[:limit]
+        except Exception as e:
+            self.error_message = f"Errore nel recupero note: {str(e)}"
+            return []
+
+    async def get_bacheca(self, limit=15):
+        if not self.is_logged_in:
+            return []
+
+        try:
+            items = await self.utente.bacheca()
+            normalized = []
+
+            for item in items or []:
+                date_value = self._parse_date(
+                    item.get("pubDT")
+                    or item.get("pubDate")
+                    or item.get("evtDate")
+                )
+
+                normalized.append(
+                    {
+                        "data": date_value,
+                        "titolo": item.get("title") or item.get("cntTitle") or "Comunicazione",
+                        "letta": bool(item.get("isRead") or item.get("read")),
+                        "codice": item.get("evtCode") or item.get("code") or "",
+                    }
+                )
+
+            normalized.sort(
+                key=lambda item: item["data"] if item["data"] is not None else datetime.min.date(),
+                reverse=True,
+            )
+            return normalized[:limit]
+        except Exception as e:
+            # Optional endpoint: fallback handled in get_registro_completo.
+            return []
+
+    async def get_lezioni(self, limit=20):
+        if not self.is_logged_in:
+            return []
+
+        try:
+            lessons = await self.utente.lezioni()
+            normalized = []
+
+            for lesson in lessons or []:
+                date_value = self._parse_date(
+                    lesson.get("lessonDate")
+                    or lesson.get("evtDate")
+                    or lesson.get("date")
+                )
+
+                normalized.append(
+                    {
+                        "data": date_value,
+                        "materia": lesson.get("subjectDesc") or lesson.get("subject") or "Lezione",
+                        "argomento": (lesson.get("lessonArg") or lesson.get("notes") or "").strip(),
+                        "durata": lesson.get("duration") or lesson.get("hours") or "",
+                    }
+                )
+
+            normalized.sort(
+                key=lambda item: item["data"] if item["data"] is not None else datetime.min.date(),
+                reverse=True,
+            )
+            if normalized:
+                return normalized[:limit]
+
+            # Common case with some accounts: lessons endpoint returns empty list.
+            return []
+        except Exception as e:
+            # Optional endpoint: fallback handled in get_registro_completo.
+            return []
+
+    async def get_didattica(self, limit=30):
+        if not self.is_logged_in:
+            return []
+
+        try:
+            items = await self.utente.didattica()
+            normalized = []
+
+            for item in items or []:
+                date_value = self._parse_date(
+                    item.get("publishDate")
+                    or item.get("evtDate")
+                    or item.get("date")
+                )
+
+                normalized.append(
+                    {
+                        "data": date_value,
+                        "materia": item.get("subjectDesc") or item.get("subject") or "Materiale",
+                        "titolo": (item.get("title") or item.get("objTitle") or "Contenuto didattico").strip(),
+                        "autore": item.get("authorName") or "Docente",
+                    }
+                )
+
+            normalized.sort(
+                key=lambda item: item["data"] if item["data"] is not None else datetime.min.date(),
+                reverse=True,
+            )
+            return normalized[:limit]
+        except Exception as e:
+            # Some accounts/schools don't expose didattica endpoint. Keep UI usable.
+            return []
+
+    async def get_periodi(self):
+        if not self.is_logged_in:
+            return []
+
+        try:
+            periods = await self.utente.periodi()
+            normalized = []
+
+            for p in periods or []:
+                normalized.append(
+                    {
+                        "descrizione": p.get("desc") or p.get("description") or p.get("periodDesc") or "Periodo",
+                        "inizio": self._parse_date(p.get("startDate") or p.get("dateBegin")),
+                        "fine": self._parse_date(p.get("endDate") or p.get("dateEnd")),
+                        "attivo": bool(p.get("isCurrent") or p.get("current")),
+                    }
+                )
+
+            return normalized
+        except Exception as e:
+            # Some accounts/schools do not expose period endpoint: fallback silently.
+            return []
+
+    def _periodi_fallback_from_voti(self, voti):
+        dated = sorted([v["data"] for v in voti if v.get("data")], reverse=False)
+        if not dated:
+            return []
+
+        start = dated[0]
+        end = dated[-1]
+        if start >= end:
+            return [{"descrizione": "Periodo unico", "inizio": start, "fine": end, "attivo": True}]
+
+        mid_idx = len(dated) // 2
+        split_date = dated[mid_idx]
+        today = datetime.now().date()
+
+        return [
+            {
+                "descrizione": "1° periodo",
+                "inizio": start,
+                "fine": split_date,
+                "attivo": start <= today <= split_date,
+            },
+            {
+                "descrizione": "2° periodo",
+                "inizio": split_date,
+                "fine": end,
+                "attivo": split_date <= today <= end,
+            },
+        ]
+
+    def _lezioni_fallback_from_agenda(self, agenda, limit=20):
+        rows = []
+        for e in agenda or []:
+            rows.append(
+                {
+                    "data": e.get("data"),
+                    "materia": e.get("materia") or "Lezione",
+                    "argomento": (e.get("nota") or "").strip(),
+                    "durata": "1H",
+                }
+            )
+
+        rows.sort(key=lambda x: x.get("data") or datetime.min.date(), reverse=True)
+        return rows[:limit]
+
+    def _comunicazioni_fallback(self, didattica, note, agenda, limit=20):
+        rows = []
+
+        for d in didattica or []:
+            rows.append(
+                {
+                    "data": d.get("data"),
+                    "titolo": d.get("titolo") or f"Materiale {d.get('materia') or ''}".strip(),
+                    "letta": True,
+                    "codice": "DID",
+                }
+            )
+
+        for n in note or []:
+            text = (n.get("testo") or "").strip()
+            title = text[:90] + ("..." if len(text) > 90 else "") if text else f"Nota {n.get('categoria') or ''}".strip()
+            rows.append(
+                {
+                    "data": n.get("data"),
+                    "titolo": title,
+                    "letta": False,
+                    "codice": "NOTA",
+                }
+            )
+
+        for e in agenda or []:
+            rows.append(
+                {
+                    "data": e.get("data"),
+                    "titolo": (
+                        f"Compito: {e.get('materia') or 'Materia'}"
+                        if e.get("is_compito")
+                        else f"Evento: {e.get('materia') or 'Agenda'}"
+                    ),
+                    "letta": not bool(e.get("is_compito")),
+                    "codice": "TASK" if e.get("is_compito") else "EVT",
+                }
+            )
+
+        rows.sort(key=lambda x: x.get("data") or datetime.min.date(), reverse=True)
+        return rows[:limit]
+
+    async def get_registro_completo(self):
+        if not self.is_logged_in:
+            return {
+                "agenda": [],
+                "voti": [],
+                "assenze": [],
+                "note": [],
+                "bacheca": [],
+                "lezioni": [],
+                "didattica": [],
+                "periodi": [],
+                "statistiche": {
+                    "media_voti": None,
+                    "assenze": 0,
+                    "verifiche": 0,
+                    "note": 0,
+                    "lezioni": 0,
+                },
+            }
+
+            # Reset transient error each refresh; keep only critical failures if any.
+            self.error_message = None
+
+        results = await asyncio.gather(
+            self.get_agenda(),
+            self.get_voti(limit=None),
+            self.get_assenze(),
+            self.get_note(),
+            self.get_bacheca(),
+            self.get_lezioni(),
+            self.get_didattica(),
+            self.get_periodi(),
+            return_exceptions=True,
+        )
+
+        agenda = [] if isinstance(results[0], Exception) else results[0]
+        voti = [] if isinstance(results[1], Exception) else results[1]
+        assenze = [] if isinstance(results[2], Exception) else results[2]
+        note = [] if isinstance(results[3], Exception) else results[3]
+        bacheca = [] if isinstance(results[4], Exception) else results[4]
+        lezioni = [] if isinstance(results[5], Exception) else results[5]
+        didattica = [] if isinstance(results[6], Exception) else results[6]
+        periodi = [] if isinstance(results[7], Exception) else results[7]
+
+        if not periodi:
+            periodi = self._periodi_fallback_from_voti(voti)
+
+        if not lezioni:
+            lezioni = self._lezioni_fallback_from_agenda(agenda)
+
+        if not bacheca:
+            bacheca = self._comunicazioni_fallback(didattica, note, agenda)
+
+        numeri = [item["numero"] for item in voti if item.get("numero") is not None]
+        media = round(sum(numeri) / len(numeri), 2) if numeri else None
+
+        return {
+            "agenda": agenda,
+            "voti": voti,
+            "assenze": assenze,
+            "note": note,
+            "bacheca": bacheca,
+            "lezioni": lezioni,
+            "didattica": didattica,
+            "periodi": periodi,
+            "statistiche": {
+                "media_voti": media,
+                "assenze": len(assenze),
+                "verifiche": len(voti),
+                "note": len(note),
+                "lezioni": len(lezioni),
+            },
+        }
+
+# Singleton instance for the app
+classeviva_service = ClassevivaService()

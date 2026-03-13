@@ -43,6 +43,8 @@ class ClassevivaService:
                 # Keep only digits from the ID
                 sanitized_id = "".join(re.findall(r"\d+", str(raw_id)))
                 self.utente.id = sanitized_id
+                # Keep endpoint id aligned with normalized numeric id.
+                self.utente._id = sanitized_id
             
             if not getattr(self.utente, "id", None):
                 self.is_logged_in = False

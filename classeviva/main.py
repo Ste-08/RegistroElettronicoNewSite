@@ -537,7 +537,18 @@ class Utente(object):
         )
         
         if (response.status_code == 200):
-            return response.json()["grades"]
+            body = response.json()
+            if isinstance(body, list):
+                return body
+            if isinstance(body, dict):
+                return (
+                    body.get("grades")
+                    or body.get("voti")
+                    or body.get("events")
+                    or body.get("items")
+                    or []
+                )
+            return []
         else:
             e.sollevaErroreHTTP(response=response)
 

@@ -98,4 +98,5 @@ if __name__ == "__main__":
     import os
     # Use PORT from environment (default 8080) for hosting services
     port = int(os.getenv("PORT", 8080))
-    ft.run(main, view=ft.AppView.WEB_BROWSER, host="0.0.0.0", port=port)
+    # ft.app is better for production server-side hosting
+    ft.app(target=main, host="0.0.0.0", port=port)

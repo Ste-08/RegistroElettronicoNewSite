@@ -36,7 +36,26 @@ class DashboardView(ft.Column):
             "statistiche": {"media_voti": None, "verifiche": 0, "assenze": 0, "note": 0, "lezioni": 0},
         }
 
-        self.loading = ft.ProgressBar(visible=False, color="#45bb50")
+        # User preferences with persistence
+        self.pref_voto_min = 6.0
+        self.seed_color = "green"
+        if hasattr(self.main_page, "client_storage"):
+            try:
+                self.pref_voto_min = float(self.main_page.client_storage.get("voto_minimo") or 6.0)
+                self.seed_color = self.main_page.client_storage.get("seed_color") or "green"
+            except:
+                pass
+        
+        saved_theme = "dark"
+        if hasattr(self.main_page, "client_storage"):
+            try:
+                saved_theme = self.main_page.client_storage.get("theme_mode") or "dark"
+            except:
+                pass
+        self.main_page.theme_mode = ft.ThemeMode.DARK if saved_theme == "dark" else ft.ThemeMode.LIGHT
+        self.main_page.theme = ft.Theme(color_scheme_seed=self.seed_color)
+
+        self.loading = ft.ProgressBar(visible=False, color=colors.PRIMARY)
         self.error_text = ft.Text(color="#ff6767", visible=False)
         self.content = ft.Column(expand=True, scroll=ft.ScrollMode.AUTO, spacing=14)
 
@@ -109,12 +128,12 @@ class DashboardView(ft.Column):
         self.main_page.snack_bar.open = True
         self.main_page.update()
 
-    async def load_data(self, e=None):
+    async def load_data(self, force_refresh=False):
         self.loading.visible = True
         self.error_text.visible = False
         self.main_page.update()
 
-        payload = await classeviva_service.get_registro_completo()
+        payload = await classeviva_service.get_registro_completo(force_refresh=force_refresh)
         if payload:
             self.data = payload
 
@@ -156,11 +175,11 @@ class DashboardView(ft.Column):
         self.content.controls.append(
             ft.Container(
                 padding=20,
-                bgcolor="#45bb50",
+                bgcolor=colors.PRIMARY,
                 content=ft.Column(
                     [
                         ft.Text("Buon pomeriggio, Stefano.", size=26, weight=ft.FontWeight.W_500, color=colors.WHITE),
-                        ft.Text(datetime.now().strftime("%d %B %Y"), size=14, color="#e8f9eb"),
+                        ft.Text(self._month_label(datetime.now()), size=14, color="#e8f9eb"),
                     ],
                     spacing=6,
                 ),
@@ -243,7 +262,7 @@ class DashboardView(ft.Column):
             self._top_bar(
                 "Agenda",
                 actions=[
-                    ft.IconButton(icons.REFRESH, icon_color=colors.WHITE, on_click=lambda e: asyncio.create_task(self.load_data())),
+                    ft.IconButton(icons.REFRESH, icon_color=colors.WHITE, on_click=lambda e: asyncio.create_task(self.load_data(force_refresh=True))),
                 ],
             )
         )
@@ -334,7 +353,7 @@ class DashboardView(ft.Column):
             self._render_altro_section()
             return
 
-        self.content.controls.append(ft.Container(padding=ft.padding.only(left=16, right=16), content=ft.Text("Generale", size=16, color="#45bb50")))
+        self.content.controls.append(ft.Container(padding=ft.padding.only(left=16, right=16), content=ft.Text("Generale", size=16, color=colors.PRIMARY)))
         menu = [
             (icons.LIST_ALT, "Lezioni", "lezioni"),
             (icons.FOLDER, "Materiale didattico", "didattica"),
@@ -353,7 +372,7 @@ class DashboardView(ft.Column):
                 )
             )
 
-        self.content.controls.append(ft.Container(padding=ft.padding.only(left=16, right=16, top=8), content=ft.Text("Altro", size=16, color="#45bb50")))
+        self.content.controls.append(ft.Container(padding=ft.padding.only(left=16, right=16, top=8), content=ft.Text("Altro", size=16, color=colors.PRIMARY)))
         settings = [
             (icons.SETTINGS, "Impostazioni", "settings"),
             (icons.GROUP, "Cambia account", "switch_account"),
@@ -399,7 +418,7 @@ class DashboardView(ft.Column):
                         content=self._card(
                             ft.Row([
                                 ft.Column([ft.Text(row.get("tipo") or "Assenza", size=17, weight=ft.FontWeight.W_500), ft.Text(self._fmt_date(row.get("data")), size=12, color="#b4bbc8")], spacing=4, expand=True),
-                                ft.Text(state, size=12, color="#45bb50" if row.get("giustificata") else "#ff9f43"),
+                                ft.Text(state, size=12, color=colors.PRIMARY if row.get("giustificata") else "#ff9f43"),
                             ])
                         ),
                     )
@@ -454,7 +473,7 @@ class DashboardView(ft.Column):
                 self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessun periodo disponibile", color="#9aa3af"))))
             for row in rows:
                 range_text = f"{self._fmt_date(row.get('inizio'))} - {self._fmt_date(row.get('fine'))}"
-                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Row([ft.Column([ft.Text(row.get("descrizione") or "Periodo", size=17, weight=ft.FontWeight.W_500), ft.Text(range_text, size=12, color="#b4bbc8")], spacing=4, expand=True), ft.Text("Attivo" if row.get("attivo") else "", color="#45bb50")]))))
+                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Row([ft.Column([ft.Text(row.get("descrizione") or "Periodo", size=17, weight=ft.FontWeight.W_500), ft.Text(range_text, size=12, color="#b4bbc8")], spacing=4, expand=True), ft.Text("Attivo" if row.get("attivo") else "", color=colors.PRIMARY)]))))
 
         elif self.altro_section == "statistiche":
             stats = self.data.get("statistiche", {})
@@ -469,28 +488,122 @@ class DashboardView(ft.Column):
             for label, value in cards:
                 self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Row([ft.Text(label, expand=True), ft.Text(value, weight=ft.FontWeight.BOLD)]))))
 
+        elif self.altro_section == "settings":
+            self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._section_title("Impostazioni")))
+            
+            # Voto Minimo Slider
+            voto_slider = ft.Slider(
+                min=4, max=10, divisions=12,
+                value=self.pref_voto_min,
+                label="{value}",
+                on_change=self._set_voto_minimo
+            )
+            self.content.controls.append(
+                ft.Container(
+                    padding=ft.padding.symmetric(horizontal=16),
+                    content=self._card(
+                        ft.Column([
+                            ft.Text("Voto minimo obiettivo", weight=ft.FontWeight.BOLD),
+                            ft.Text("Highlights i voti sotto questa soglia", size=12, color="#b4bbc8"),
+                            voto_slider,
+                        ], spacing=10)
+                    )
+                )
+            )
+
+            # Application Color
+            self.content.controls.append(
+                ft.Container(
+                    padding=ft.padding.symmetric(horizontal=16),
+                    content=self._card(
+                        ft.Column([
+                            ft.Text("Colore Applicazione", weight=ft.FontWeight.BOLD),
+                            ft.Row([
+                                ft.Container(
+                                    width=30, height=30, bgcolor=c, border_radius=15,
+                                    on_click=lambda _, col=c: self._set_seed_color(col),
+                                    border=ft.border.all(2, colors.WHITE if self.seed_color == c else colors.TRANSPARENT),
+                                    animate=ft.Animation(300, "decelerate")
+                                ) for c in ["green", "blue", "red", "purple", "orange", "teal"]
+                            ], spacing=10, scroll=ft.ScrollMode.ADAPTIVE),
+                        ], spacing=10)
+                    )
+                )
+            )
+
+            # Theme Switcher
+            theme_switch = ft.Switch(
+                label="Tema Scuro",
+                value=self.main_page.theme_mode == ft.ThemeMode.DARK,
+                on_change=self._toggle_theme
+            )
+            self.content.controls.append(
+                ft.Container(
+                    padding=ft.padding.symmetric(horizontal=16),
+                    content=self._card(theme_switch)
+                )
+            )
+
+            # GitHub Link
+            self.content.controls.append(
+                ft.Container(
+                    padding=ft.padding.symmetric(horizontal=16),
+                    content=self._card(
+                        ft.ListTile(
+                            leading=ft.Icon(icons.CODE),
+                            title=ft.Text("GitHub Repository"),
+                            subtitle=ft.Text("Vedi il codice sorgente", size=12),
+                            on_click=lambda _: asyncio.create_task(self.main_page.launch_url("https://github.com/stefano/RegistroElettronicoNewSite"))
+                        )
+                    )
+                )
+            )
+
     def _back_to_altro_menu(self, e):
         self.altro_section = "menu"
         self.render()
 
     def _open_altro_section(self, section):
         if section == "web":
-            self.main_page.launch_url("https://web.spaggiari.eu")
+            asyncio.create_task(self.main_page.launch_url("https://web.spaggiari.eu"))
             self._show_message("Apertura web Classeviva")
             return
         self.altro_section = section
         self.render()
 
     def _handle_altro_action(self, action):
-        if action == "logout":
-            return asyncio.create_task(self.on_logout(None))
-        if action == "switch_account":
-            self._show_message("Reindirizzamento al login...")
+        if action == "logout" or action == "switch_account":
+            if hasattr(self.main_page, "client_storage"):
+                self.main_page.client_storage.remove("saved_user")
+                self.main_page.client_storage.remove("saved_pass")
+                self.main_page.client_storage.remove("remember_me")
+            if action == "switch_account":
+                self._show_message("Reindirizzamento al login...")
             return asyncio.create_task(self.on_logout(None))
         if action == "settings":
-            self.main_page.theme_mode = ft.ThemeMode.LIGHT if self.main_page.theme_mode == ft.ThemeMode.DARK else ft.ThemeMode.DARK
-            self._show_message("Tema aggiornato")
-            self.main_page.update()
+            self.altro_section = "settings"
+            self.render()
+
+    def _set_voto_minimo(self, e):
+        self.pref_voto_min = float(e.control.value)
+        if hasattr(self.main_page, "client_storage"):
+            self.main_page.client_storage.set("voto_minimo", self.pref_voto_min)
+        self.render()
+
+    def _set_seed_color(self, color_name):
+        self.seed_color = color_name
+        if hasattr(self.main_page, "client_storage"):
+            self.main_page.client_storage.set("seed_color", color_name)
+        self.main_page.theme = ft.Theme(color_scheme_seed=color_name)
+        self.main_page.update()
+        self.render()
+
+    def _toggle_theme(self, e):
+        self.main_page.theme_mode = ft.ThemeMode.DARK if e.control.value else ft.ThemeMode.LIGHT
+        if hasattr(self.main_page, "client_storage"):
+            self.main_page.client_storage.set("theme_mode", "dark" if e.control.value else "light")
+        self.main_page.update()
+        self.render()
 
     def _week_chart_card(self):
         labels = ["LUN", "MAR", "MER", "GIO", "VEN", "SAB"]
@@ -543,7 +656,7 @@ class DashboardView(ft.Column):
 
     def _voto_tile(self, voto):
         badge_color = "#4fd467"
-        if voto.get("numero") is not None and voto["numero"] < 6:
+        if voto.get("numero") is not None and voto["numero"] < self.pref_voto_min:
             badge_color = "#f44336"
 
         return self._card(
@@ -631,7 +744,7 @@ class DashboardView(ft.Column):
     def _pill(self, text, key):
         active = self.voti_filter == key
         return ft.Container(
-            bgcolor="#45bb50" if active else "#42454d",
+            bgcolor=colors.PRIMARY if active else "#42454d",
             border_radius=20,
             padding=ft.padding.symmetric(horizontal=14, vertical=8),
             ink=True,
@@ -680,7 +793,7 @@ class DashboardView(ft.Column):
             height=120,
             value=value / 10.0,
             stroke_width=10,
-            color="#45bb50",
+            color=colors.PRIMARY,
             bgcolor="#e7e7e7",
         )
 
@@ -719,7 +832,7 @@ class DashboardView(ft.Column):
 
         for val in values:
             h = 18 + int(((val - min_val) / span) * 70)
-            bars.controls.append(ft.Container(width=7, height=h, bgcolor="#45bb50", border_radius=6))
+            bars.controls.append(ft.Container(width=7, height=h, bgcolor=colors.PRIMARY, border_radius=6))
 
         return ft.Column(
             [
@@ -773,12 +886,13 @@ class DashboardView(ft.Column):
 
     def _subject_avg_tile(self, row):
         val = max(0.0, min(row["media"], 10.0))
+        color = colors.PRIMARY if val >= self.pref_voto_min else "#f44336"
         ring = ft.ProgressRing(
             width=72,
             height=72,
             value=val / 10.0,
             stroke_width=7,
-            color="#45bb50",
+            color=color,
             bgcolor="#ececec",
         )
 
@@ -786,39 +900,33 @@ class DashboardView(ft.Column):
         if not voti_text:
             voti_text = "Nessun voto disponibile"
 
-        return ft.Container(
-            ink=True,
-            on_click=lambda e, r=row: self._open_subject_details(r),
-            content=self._card(
-                ft.Row(
-                    [
-                        ft.Stack(
-                            [
-                                ring,
-                                ft.Container(
-                                    width=72,
-                                    height=72,
-                                    alignment=ft.Alignment(0, 0),
-                                    content=ft.Text(f"{val:.2f}", size=14, weight=ft.FontWeight.W_500),
-                                ),
-                            ]
-                        ),
-                        ft.Column(
-                            [
-                                ft.Text(row["materia"], size=20, weight=ft.FontWeight.W_500),
-                                ft.Text(f"Media: {row['media']:.2f}", size=13, color="#d8dee7"),
-                                ft.Text(row["hint"], size=15, color="#e2e6ea"),
-                                ft.Text(f"Voti: {voti_text}", size=12, color="#b9c1cc"),
-                                ft.Text("Tocca per dettaglio", size=11, color="#7fbf89"),
-                            ],
-                            spacing=3,
-                        ),
-                        ft.IconButton(icons.CHEVRON_RIGHT, icon_color="#7fbf89", on_click=lambda e, r=row: self._open_subject_details(r)),
-                    ],
-                    spacing=16,
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                )
-            ),
+        return self._card(
+            ft.Row(
+                [
+                    ft.Stack(
+                        [
+                            ring,
+                            ft.Container(
+                                width=72,
+                                height=72,
+                                alignment=ft.Alignment(0, 0),
+                                content=ft.Text(f"{val:.2f}", size=14, weight=ft.FontWeight.W_500),
+                            ),
+                        ]
+                    ),
+                    ft.Column(
+                        [
+                            ft.Text(row["materia"], size=20, weight=ft.FontWeight.W_500),
+                            ft.Text(f"Media: {row['media']:.2f}", size=13, color="#d8dee7"),
+                            ft.Text(row["hint"], size=15, color="#e2e6ea"),
+                            ft.Text(f"Voti: {voti_text}", size=12, color="#b9c1cc"),
+                        ],
+                        spacing=3,
+                    ),
+                ],
+                spacing=16,
+                alignment=ft.MainAxisAlignment.START,
+            )
         )
 
     def _open_subject_details(self, row):
@@ -856,8 +964,9 @@ class DashboardView(ft.Column):
             actions_alignment=ft.MainAxisAlignment.END,
         )
 
-        if hasattr(self.main_page, "open"):
+        if hasattr(self.main_page, "open") and hasattr(self.main_page, "update"):
             self.main_page.open(dialog)
+            self.main_page.update()
         else:
             self.main_page.dialog = dialog
             dialog.open = True
@@ -872,9 +981,26 @@ class DashboardView(ft.Column):
             self.main_page.dialog.open = False
             self.main_page.update()
 
+    def _menu_row(self, icon, label, on_click):
+        return ft.Container(
+            content=self._card(
+                ft.Row(
+                    [
+                        ft.Icon(icon, color=colors.PRIMARY, size=24),
+                        ft.Text(label, expand=True, size=16),
+                        ft.Icon(icons.CHEVRON_RIGHT, color="#9aa3af", size=20),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                )
+            ),
+            ink=True,
+            on_click=on_click,
+            border_radius=12,
+        )
+
     def _mail_tile(self, item):
         unread = not item.get("letta")
-        mail_color = "#ff4b46" if unread else "#45bb50"
+        mail_color = "#ff4b46" if unread else colors.PRIMARY
 
         return self._card(
             ft.Row(

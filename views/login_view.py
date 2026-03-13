@@ -44,6 +44,8 @@ class LoginView(ft.Column):
         self.error_text = ft.Text(color=colors.RED_400, size=14)
         self.loading_ring = ft.ProgressRing(visible=False, width=30, height=30, stroke_width=2)
 
+        self.remember_me_checkbox = ft.Checkbox(label="Rimani collegato", value=True, check_color=colors.WHITE, fill_color=colors.BLUE_600)
+        
         self.controls = [
             ft.Container(
                 content=ft.Column(
@@ -54,6 +56,9 @@ class LoginView(ft.Column):
                         ft.Divider(height=40, color=ft.colors.TRANSPARENT if hasattr(ft, "colors") else colors.TRANSPARENT),
                         self.username_field,
                         self.password_field,
+                        ft.Row([
+                            self.remember_me_checkbox,
+                        ], alignment=ft.MainAxisAlignment.START),
                         ft.Divider(height=20, color=ft.colors.TRANSPARENT if hasattr(ft, "colors") else colors.TRANSPARENT),
                         ft.Row([self.login_button, self.loading_ring], alignment=ft.MainAxisAlignment.CENTER),
                         self.error_text,
@@ -79,15 +84,27 @@ class LoginView(ft.Column):
 
         self.login_button.disabled = True
         self.loading_ring.visible = True
-        self.error_text.value = ""
+        self.error_text.value = "Autenticazione in corso..."
+        self.error_text.color = colors.BLUE_400
         self.main_page.update()
 
+        # Phase 1: Authentication
         success = await classeviva_service.login(self.username_field.value, self.password_field.value)
 
         if success:
+            if hasattr(self.main_page, "client_storage"):
+                if self.remember_me_checkbox.value:
+                    self.main_page.client_storage.set("saved_user", self.username_field.value)
+                    self.main_page.client_storage.set("saved_pass", self.password_field.value)
+                    self.main_page.client_storage.set("remember_me", True)
+            
+            self.error_text.value = "Sincronizzazione dati in corso..."
+            self.main_page.update()
+            # Note: prefetch_all is already called inside classeviva_service.login()
             await self.on_login_success()
         else:
             self.error_text.value = classeviva_service.error_message
+            self.error_text.color = colors.RED_400
             self.login_button.disabled = False
             self.loading_ring.visible = False
-            self.page.update()
+            self.main_page.update()

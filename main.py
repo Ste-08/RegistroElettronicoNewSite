@@ -8,17 +8,34 @@ colors = getattr(ft, "colors", getattr(ft, "Colors", None))
 
 async def main(page: ft.Page):
     page.title = "Classeviva Web"
-    page.theme_mode = ft.ThemeMode.DARK
+    
+    # Load settings from storage safely
+    saved_theme = "dark"
+    seed_color = "green"
+    if hasattr(page, "client_storage"):
+        try:
+            saved_theme = page.client_storage.get("theme_mode") or "dark"
+            seed_color = page.client_storage.get("seed_color") or "green"
+        except:
+            pass
+    
+    page.theme_mode = ft.ThemeMode.DARK if saved_theme == "dark" else ft.ThemeMode.LIGHT
+    page.theme = ft.Theme(
+        font_family="Inter",
+        color_scheme_seed=seed_color
+    )
+    
+    page.window_resizable = True
+    # If we are on desktop, we can still set a decent initial size but without limits
     page.window_width = 450
     page.window_height = 800
-    page.window_resizable = True
-    page.bgcolor = colors.GREY_900
+    
+    # bgcolor will follow theme surface
+    page.bgcolor = None 
+    
     page.fonts = {
         "Inter": "https://github.com/google/fonts/raw/main/ofl/inter/Inter-VariableFont_slnt%2Cwght.ttf"
     }
-    page.theme = ft.Theme(font_family="Inter")
-    
-    page.padding = 0
 
     async def navigate_to_dashboard():
         page.controls.clear()
@@ -26,13 +43,59 @@ async def main(page: ft.Page):
         page.update()
 
     async def logout(e):
+        if hasattr(page, "client_storage"):
+            page.client_storage.remove("saved_user")
+            page.client_storage.remove("saved_pass")
+            page.client_storage.remove("remember_me")
         page.controls.clear()
         page.add(LoginView(page, on_login_success=navigate_to_dashboard))
         page.update()
 
-    # Initial view
-    page.add(LoginView(page, on_login_success=navigate_to_dashboard))
-    page.update()
+    icons = getattr(ft, "icons", None)
+
+    # Automatic Login Check
+    async def check_auto_login():
+        if not hasattr(page, "client_storage"):
+            page.add(LoginView(page, on_login_success=navigate_to_dashboard))
+            page.update()
+            return
+
+        user = page.client_storage.get("saved_user")
+        pwd = page.client_storage.get("saved_pass")
+        remember = page.client_storage.get("remember_me")
+        
+        print(f"[DEBUG] Tentativo login automatico: user={user}, pwd={'***' if pwd else None}, remember={remember}")
+
+        if user and pwd and remember:
+            # Show a nice splash/loading during auto-login
+            page.add(
+                ft.Container(
+                    expand=True,
+                    content=ft.Column([
+                        ft.Icon(icons.SCHOOL if icons else None, size=80, color=colors.BLUE_400),
+                        ft.Text("Ripristino sessione...", size=20, weight=ft.FontWeight.BOLD),
+                        ft.ProgressRing(width=40, height=40, stroke_width=2),
+                    ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+                )
+            )
+            page.update()
+
+            from services.classeviva_service import classeviva_service
+            success = await classeviva_service.login(user, pwd)
+            if success:
+                await navigate_to_dashboard()
+                return
+        
+        # Fallback to LoginView
+        page.controls.clear()
+        page.add(LoginView(page, on_login_success=navigate_to_dashboard))
+        page.update()
+
+    # Start the check
+    asyncio.create_task(check_auto_login())
 
 if __name__ == "__main__":
-    ft.run(main, view=ft.AppView.WEB_BROWSER)
+    import os
+    # Use PORT from environment (default 8080) for hosting services
+    port = int(os.getenv("PORT", 8080))
+    ft.run(main, view=ft.AppView.WEB_BROWSER, host="0.0.0.0", port=port)

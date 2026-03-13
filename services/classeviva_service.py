@@ -8,6 +8,16 @@ class ClassevivaService:
         self.utente = None
         self.is_logged_in = False
         self.error_message = None
+        
+        # State variables for pre-fetched data
+        self.voti_cached = []
+        self.note_cached = []
+        self.assenze_cached = []
+        self.agenda_cached = []
+        self.bacheca_cached = []
+        self.lezioni_cached = []
+        self.didattica_cached = []
+        self.periodi_cached = []
 
     async def login(self, username, password):
         try:
@@ -19,27 +29,94 @@ class ClassevivaService:
                 self.error_message = "Login fallito. Controlla le credenziali."
                 return False
 
-            # Force recovery of ID if missing
-            if not self.utente.id:
-                await self.utente.documenti()
+            # Force recovery of ID and sanitize it to be strictly numeric
+            raw_id = None
+            if hasattr(self.utente, "id") and self.utente.id:
+                raw_id = self.utente.id
+            elif hasattr(self.utente, "dati") and self.utente.dati:
+                raw_id = self.utente.dati.get("ident") or self.utente.dati.get("id")
+
+            if not raw_id:
+                try:
+                    await self.utente.documenti()
+                    raw_id = getattr(self.utente, "id", None)
+                except:
+                    pass
+
+            if raw_id:
+                # Keep only digits from the ID
+                sanitized_id = "".join(re.findall(r"\d+", str(raw_id)))
+                self.utente.id = sanitized_id
+            
+            if not getattr(self.utente, "id", None):
+                self.is_logged_in = False
+                self.error_message = "Impossibile recuperare l'ID studente numerico."
+                return False
             
             self.is_logged_in = True
             self.error_message = None
+            
+            # Pre-fetch all data immediately after login
+            await self.prefetch_all()
+            
             return True
         except Exception as e:
             self.is_logged_in = False
             self.error_message = f"Errore durante il login: {str(e)}"
             return False
 
-    async def get_agenda(self):
+    async def prefetch_all(self):
+        if not self.is_logged_in:
+            return
+            
+        results = await asyncio.gather(
+            self.get_voti(force_refresh=True),
+            self.get_note(force_refresh=True),
+            self.get_assenze(force_refresh=True),
+            self.get_agenda(force_refresh=True),
+            self.get_bacheca(force_refresh=True),
+            self.get_lezioni(force_refresh=True),
+            self.get_didattica(force_refresh=True),
+            self.get_periodi(force_refresh=True),
+            return_exceptions=True
+        )
+
+        # Populate cache from results
+        def safe_get(idx, default=[]):
+            res = results[idx]
+            return default if isinstance(res, Exception) else res
+
+        self.voti_cached = safe_get(0)
+        self.note_cached = safe_get(1)
+        self.assenze_cached = safe_get(2)
+        self.agenda_cached = safe_get(3)
+        self.bacheca_cached = safe_get(4)
+        self.lezioni_cached = safe_get(5)
+        self.didattica_cached = safe_get(6)
+        self.periodi_cached = safe_get(7, default=[])
+
+        # Fallbacks
+        if not self.periodi_cached:
+            self.periodi_cached = self._periodi_fallback_from_voti(self.voti_cached)
+        if not self.lezioni_cached:
+            self.lezioni_cached = self._lezioni_fallback_from_agenda(self.agenda_cached)
+        if not self.bacheca_cached:
+            self.bacheca_cached = self._comunicazioni_fallback(self.didattica_cached, self.note_cached, self.agenda_cached)
+
+    async def get_agenda(self, force_refresh=False):
         if not self.is_logged_in:
             return []
         
+        if not force_refresh and self.agenda_cached:
+            return self.agenda_cached
+
         try:
             dati = await self.utente.agenda()
-            eventi = dati if isinstance(dati, list) else dati.get("agenda", [])
+            eventi = dati if isinstance(dati, list) else dati.get("agenda", []) or dati.get("events") or []
             
             if not eventi:
+                if not force_refresh:
+                    self.agenda_cached = []
                 return []
 
             eventi_filtrati = []
@@ -48,7 +125,11 @@ class ClassevivaService:
                 data_str = ev.get("evtDatetimeBegin", "").split("T")[0]
                 if not data_str: continue
                 
-                data_evento = datetime.strptime(data_str, "%Y-%m-%d").date()
+                try:
+                    data_evento = datetime.strptime(data_str, "%Y-%m-%d").date()
+                except:
+                    data_evento = self._parse_date(data_str)
+                    
                 nota = (ev.get("notes") or "Nessuna nota").strip()
                 note_l = nota.lower()
                 code = (ev.get("evtCode") or ev.get("eventCode") or "").upper()
@@ -66,12 +147,14 @@ class ClassevivaService:
                     "is_compito": any(k in note_l for k in compito_keywords) or code in {"COMP", "HW", "HOM", "TASK"},
                 })
             
-            # Sort by date
-            eventi_filtrati.sort(key=lambda x: (x["data"], x.get("inizio") or ""))
+            eventi_filtrati.sort(key=lambda x: (x["data"] or date.min, x.get("inizio") or ""))
+            
+            if not force_refresh:
+                self.agenda_cached = eventi_filtrati
             return eventi_filtrati
         except Exception as e:
             self.error_message = f"Errore nel recupero dell'agenda: {str(e)}"
-            return []
+            return self.agenda_cached
 
     def _parse_date(self, value):
         if value is None:
@@ -116,12 +199,16 @@ class ClassevivaService:
         except ValueError:
             return None
 
-    async def get_voti(self, limit=None):
+    async def get_voti(self, limit=None, force_refresh=False):
         if not self.is_logged_in:
             return []
 
+        if not force_refresh and self.voti_cached:
+            return self.voti_cached if limit is None else self.voti_cached[:limit]
+
         try:
-            grades = await self.utente.voti()
+            dati = await self.utente.voti()
+            grades = dati if isinstance(dati, list) else (dati.get("grades") or dati.get("voti") or [])
             normalized = []
 
             for grade in grades or []:
@@ -159,17 +246,24 @@ class ClassevivaService:
                 key=lambda item: item["data"] if item["data"] is not None else datetime.min.date(),
                 reverse=True,
             )
+            
+            if not force_refresh:
+                self.voti_cached = normalized
             return normalized if limit is None else normalized[:limit]
         except Exception as e:
             self.error_message = f"Errore nel recupero voti: {str(e)}"
-            return []
+            return self.voti_cached
 
-    async def get_assenze(self, limit=25):
+    async def get_assenze(self, limit=25, force_refresh=False):
         if not self.is_logged_in:
             return []
 
+        if not force_refresh and self.assenze_cached:
+            return self.assenze_cached[:limit]
+
         try:
-            events = await self.utente.assenze()
+            dati = await self.utente.assenze()
+            events = dati if isinstance(dati, list) else dati.get("events") or dati.get("assenze") or []
             normalized = []
 
             for event in events or []:
@@ -195,20 +289,28 @@ class ClassevivaService:
                 key=lambda item: item["data"] if item["data"] is not None else datetime.min.date(),
                 reverse=True,
             )
+            
+            if not force_refresh:
+                self.assenze_cached = normalized
             return normalized[:limit]
         except Exception as e:
             self.error_message = f"Errore nel recupero assenze: {str(e)}"
-            return []
+            return self.assenze_cached
 
-    async def get_note(self, limit=20):
+    async def get_note(self, limit=20, force_refresh=False):
         if not self.is_logged_in:
             return []
 
+        if not force_refresh and self.note_cached:
+            return self.note_cached[:limit]
+
         try:
-            raw_notes = await self.utente.note()
+            dati = await self.utente.note()
+            # Handle list vs dict (categories)
+            raw_notes = dati if isinstance(dati, dict) else {"generali": dati} if isinstance(dati, list) else {}
             normalized = []
 
-            for category, items in (raw_notes or {}).items():
+            for category, items in raw_notes.items():
                 if not isinstance(items, list):
                     continue
 
@@ -232,17 +334,24 @@ class ClassevivaService:
                 key=lambda item: item["data"] if item["data"] is not None else datetime.min.date(),
                 reverse=True,
             )
+            
+            if not force_refresh:
+                self.note_cached = normalized
             return normalized[:limit]
         except Exception as e:
             self.error_message = f"Errore nel recupero note: {str(e)}"
-            return []
+            return self.note_cached
 
-    async def get_bacheca(self, limit=15):
+    async def get_bacheca(self, limit=15, force_refresh=False):
         if not self.is_logged_in:
             return []
 
+        if not force_refresh and self.bacheca_cached:
+            return self.bacheca_cached[:limit]
+
         try:
-            items = await self.utente.bacheca()
+            dati = await self.utente.bacheca()
+            items = dati if isinstance(dati, list) else (dati.get("items") or dati.get("comunicazioni") or [])
             normalized = []
 
             for item in items or []:
@@ -265,17 +374,25 @@ class ClassevivaService:
                 key=lambda item: item["data"] if item["data"] is not None else datetime.min.date(),
                 reverse=True,
             )
+            
+            if not force_refresh:
+                self.bacheca_cached = normalized
             return normalized[:limit]
         except Exception as e:
-            # Optional endpoint: fallback handled in get_registro_completo.
+            if not force_refresh:
+                self.bacheca_cached = []
             return []
 
-    async def get_lezioni(self, limit=20):
+    async def get_lezioni(self, limit=20, force_refresh=False):
         if not self.is_logged_in:
             return []
 
+        if not force_refresh and self.lezioni_cached:
+            return self.lezioni_cached[:limit]
+
         try:
-            lessons = await self.utente.lezioni()
+            dati = await self.utente.lezioni()
+            lessons = dati if isinstance(dati, list) else (dati.get("lessons") or dati.get("lezioni") or [])
             normalized = []
 
             for lesson in lessons or []:
@@ -298,21 +415,25 @@ class ClassevivaService:
                 key=lambda item: item["data"] if item["data"] is not None else datetime.min.date(),
                 reverse=True,
             )
-            if normalized:
-                return normalized[:limit]
-
-            # Common case with some accounts: lessons endpoint returns empty list.
-            return []
+            
+            if not force_refresh:
+                self.lezioni_cached = normalized
+            return normalized[:limit]
         except Exception as e:
-            # Optional endpoint: fallback handled in get_registro_completo.
+            if not force_refresh:
+                self.lezioni_cached = []
             return []
 
-    async def get_didattica(self, limit=30):
+    async def get_didattica(self, limit=30, force_refresh=False):
         if not self.is_logged_in:
             return []
 
+        if not force_refresh and self.didattica_cached:
+            return self.didattica_cached[:limit]
+
         try:
-            items = await self.utente.didattica()
+            dati = await self.utente.didattica()
+            items = dati if isinstance(dati, list) else (dati.get("items") or dati.get("didattica") or [])
             normalized = []
 
             for item in items or []:
@@ -335,17 +456,25 @@ class ClassevivaService:
                 key=lambda item: item["data"] if item["data"] is not None else datetime.min.date(),
                 reverse=True,
             )
+            
+            if not force_refresh:
+                self.didattica_cached = normalized
             return normalized[:limit]
         except Exception as e:
-            # Some accounts/schools don't expose didattica endpoint. Keep UI usable.
+            if not force_refresh:
+                self.didattica_cached = []
             return []
 
-    async def get_periodi(self):
+    async def get_periodi(self, force_refresh=False):
         if not self.is_logged_in:
             return []
 
+        if not force_refresh and self.periodi_cached:
+            return self.periodi_cached
+
         try:
-            periods = await self.utente.periodi()
+            dati = await self.utente.periodi()
+            periods = dati if isinstance(dati, list) else (dati.get("periods") or dati.get("periodi") or [])
             normalized = []
 
             for p in periods or []:
@@ -358,10 +487,11 @@ class ClassevivaService:
                     }
                 )
 
+            if not force_refresh:
+                self.periodi_cached = normalized
             return normalized
         except Exception as e:
-            # Some accounts/schools do not expose period endpoint: fallback silently.
-            return []
+            return self.periodi_cached
 
     def _periodi_fallback_from_voti(self, voti):
         dated = sorted([v["data"] for v in voti if v.get("data")], reverse=False)
@@ -449,7 +579,8 @@ class ClassevivaService:
         rows.sort(key=lambda x: x.get("data") or datetime.min.date(), reverse=True)
         return rows[:limit]
 
-    async def get_registro_completo(self):
+    async def get_registro_completo(self, force_refresh=False):
+        self.error_message = None
         if not self.is_logged_in:
             return {
                 "agenda": [],
@@ -468,39 +599,18 @@ class ClassevivaService:
                     "lezioni": 0,
                 },
             }
+        
+        if force_refresh:
+            await self.prefetch_all()
 
-            # Reset transient error each refresh; keep only critical failures if any.
-            self.error_message = None
-
-        results = await asyncio.gather(
-            self.get_agenda(),
-            self.get_voti(limit=None),
-            self.get_assenze(),
-            self.get_note(),
-            self.get_bacheca(),
-            self.get_lezioni(),
-            self.get_didattica(),
-            self.get_periodi(),
-            return_exceptions=True,
-        )
-
-        agenda = [] if isinstance(results[0], Exception) else results[0]
-        voti = [] if isinstance(results[1], Exception) else results[1]
-        assenze = [] if isinstance(results[2], Exception) else results[2]
-        note = [] if isinstance(results[3], Exception) else results[3]
-        bacheca = [] if isinstance(results[4], Exception) else results[4]
-        lezioni = [] if isinstance(results[5], Exception) else results[5]
-        didattica = [] if isinstance(results[6], Exception) else results[6]
-        periodi = [] if isinstance(results[7], Exception) else results[7]
-
-        if not periodi:
-            periodi = self._periodi_fallback_from_voti(voti)
-
-        if not lezioni:
-            lezioni = self._lezioni_fallback_from_agenda(agenda)
-
-        if not bacheca:
-            bacheca = self._comunicazioni_fallback(didattica, note, agenda)
+        voti = self.voti_cached
+        note = self.note_cached
+        assenze = self.assenze_cached
+        agenda = self.agenda_cached
+        bacheca = self.bacheca_cached
+        lezioni = self.lezioni_cached
+        didattica = self.didattica_cached
+        periodi = self.periodi_cached
 
         numeri = [item["numero"] for item in voti if item.get("numero") is not None]
         media = round(sum(numeri) / len(numeri), 2) if numeri else None

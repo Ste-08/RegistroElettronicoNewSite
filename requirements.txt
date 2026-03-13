@@ -1,3 +1,2 @@
 flet
-classeviva-py
-flet-desktop
+requests

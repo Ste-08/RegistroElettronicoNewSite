@@ -60,7 +60,7 @@ async def main(page: ft.Page):
     # Automatic Login Check
     async def check_auto_login():
         if not hasattr(page, "client_storage"):
-            page.add(LoginView(page, on_login_success=navigate_to_dashboard))
+            page.add(LoginView(page, on_login_success=navigate_to_dashboard, service=service))
             page.update()
             return
 
@@ -101,5 +101,11 @@ if __name__ == "__main__":
     import os
     # Use PORT from environment (default 8080) for hosting services
     port = int(os.getenv("PORT", 8080))
-    # ft.app is better for production server-side hosting
-    ft.app(target=main, host="0.0.0.0", port=port)
+    # Prefer ft.run on newer Flet; keep backward compatibility with older versions.
+    if hasattr(ft, "run"):
+        try:
+            ft.run(main, host="0.0.0.0", port=port)
+        except TypeError:
+            ft.run(target=main, host="0.0.0.0", port=port)
+    else:
+        ft.app(target=main, host="0.0.0.0", port=port)

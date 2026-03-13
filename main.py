@@ -94,18 +94,41 @@ async def main(page: ft.Page):
         page.add(LoginView(page, on_login_success=navigate_to_dashboard, service=service))
         page.update()
 
-    # Start the check
-    asyncio.create_task(check_auto_login())
+    # Start flow synchronously to avoid swallowed task exceptions and blank screens.
+    try:
+        await check_auto_login()
+    except Exception as ex:
+        print(f"[ERROR] Inizializzazione pagina fallita: {ex}")
+        page.controls.clear()
+        page.add(LoginView(page, on_login_success=navigate_to_dashboard, service=service))
+        page.update()
 
 if __name__ == "__main__":
     import os
     # Use PORT from environment (default 8080) for hosting services
     port = int(os.getenv("PORT", 8080))
+
+    # Render/headless deployment: enforce web mode when supported by current Flet API.
+    app_view = None
+    if hasattr(ft, "AppView") and hasattr(ft.AppView, "WEB_BROWSER"):
+        app_view = ft.AppView.WEB_BROWSER
+    elif hasattr(ft, "WEB_BROWSER"):
+        app_view = ft.WEB_BROWSER
+
     # Prefer ft.run on newer Flet; keep backward compatibility with older versions.
     if hasattr(ft, "run"):
         try:
-            ft.run(main, host="0.0.0.0", port=port)
+            if app_view is not None:
+                ft.run(main, host="0.0.0.0", port=port, view=app_view)
+            else:
+                ft.run(main, host="0.0.0.0", port=port)
         except TypeError:
-            ft.run(target=main, host="0.0.0.0", port=port)
+            if app_view is not None:
+                ft.run(target=main, host="0.0.0.0", port=port, view=app_view)
+            else:
+                ft.run(target=main, host="0.0.0.0", port=port)
     else:
-        ft.app(target=main, host="0.0.0.0", port=port)
+        if app_view is not None:
+            ft.app(target=main, host="0.0.0.0", port=port, view=app_view)
+        else:
+            ft.app(target=main, host="0.0.0.0", port=port)

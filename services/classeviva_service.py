@@ -43,6 +43,9 @@ class ClassevivaService:
                 if candidate not in candidates:
                     candidates.append(candidate)
 
+        # Debug: log the exact candidates being generated
+        self._log_login_debug(f"_build_login_candidates input={username!r} raw={raw!r} upper={upper!r} digits={digits!r} final_candidates={candidates}")
+        
         return candidates
 
     async def login(self, username, password):

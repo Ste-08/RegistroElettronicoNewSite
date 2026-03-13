@@ -26,6 +26,13 @@ class Utente(object):
         self._sessione = requests.Session()
         self._dati: dict = {}
 
+    # Async helpers to avoid blocking the event loop with synchronous HTTP calls
+    async def _async_get(self, url, **kwargs):
+        return await asyncio.to_thread(self._sessione.get, url, **kwargs)
+
+    async def _async_post(self, url, **kwargs):
+        return await asyncio.to_thread(self._sessione.post, url, **kwargs)
+
     def __str__(self) -> str:
         return f"<oggetto classeviva.Utente a {id(self)}>"
 
@@ -56,7 +63,7 @@ class Utente(object):
             return
         payload = {"ident": None, "pass": self.password, "uid": self.id}
         print(f"[DEBUG] Richiesta login a {c.Collegamenti.accesso}...")
-        response = self._sessione.post(
+        response = await self._async_post(
             c.Collegamenti.accesso,
             headers=v.intestazione,
             json=payload
@@ -79,7 +86,7 @@ class Utente(object):
 
     # https://github.com/Lioydiano/Classeviva-Official-Endpoints/blob/master/Documents/documents.md
     async def documenti(self) -> dict[str, list[dict[str, str]]]:
-        response = self._sessione.post(
+        response = await self._async_post(
             c.Collegamenti.documenti.format(self._id),
             headers=self.__intestazione()
         )
@@ -92,7 +99,7 @@ class Utente(object):
     async def controlla_documento(self, documento: str) -> bool:
         if (not self.connesso):
             await self.accedi()
-        response = self._sessione.post(
+        response = await self._async_post(
             c.Collegamenti.controllo_documento.format(self._id, documento),
             headers=self.__intestazione()
         )
@@ -105,7 +112,7 @@ class Utente(object):
     async def assenze(self) -> list[dict[str, Any]]:
         if (not self.connesso):
             await self.accedi()
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.assenze.format(self._id),
             headers=self.__intestazione()
         )
@@ -122,7 +129,7 @@ class Utente(object):
 
         if (not self.connesso):
             await self.accedi()
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.assenze_da.format(
                 self._id, 
                 inizio.replace("-", "")
@@ -157,7 +164,7 @@ class Utente(object):
 
         if (not self.connesso):
             await self.accedi()
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.assenze_da.format(
                 self._id, 
                 inizio.replace('-', ''), 
@@ -192,7 +199,7 @@ class Utente(object):
     async def agenda(self) -> list[dict[str, Any]]:
         if (not self.connesso):
             await self.accedi()
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.agenda_da_a.format(
                 self._id,
                 v.data_inizio_anno(),
@@ -213,7 +220,7 @@ class Utente(object):
 
         if (not self.connesso):
             await self.accedi()
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.agenda_da_a.format(
                 self._id,
                 inizio.replace('-', ''), 
@@ -248,7 +255,7 @@ class Utente(object):
 
         if (not self.connesso):
             await self.accedi()
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.agenda_codice_da_a.format(
                 self._id, codice,
                 inizio.replace('-', ''), 
@@ -283,7 +290,7 @@ class Utente(object):
     async def didattica(self) -> list[dict[str, Any]]:
         if (not self.connesso):
             await self.accedi()
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.didattica.format(self._id),
             headers=self.__intestazione()
         )
@@ -295,7 +302,7 @@ class Utente(object):
     async def didattica_elemento(self, contenuto: int) -> Any:
         if (not self.connesso):
             await self.accedi()
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.didattica_elemento.format(self._id, contenuto),
             headers=self.__intestazione()
         )
@@ -308,7 +315,7 @@ class Utente(object):
     async def bacheca(self) -> list[dict[str, str | bool | dict[str, str | int]]]:
         if (not self.connesso):
             await self.accedi()
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.bacheca.format(self._id),
             headers=self.__intestazione()
         )
@@ -321,7 +328,7 @@ class Utente(object):
     async def bacheca_leggi(self, codice: str, id_: int) -> dict[str, dict[str, Any]]:
         if (not self.connesso):
             await self.accedi()
-        response = self._sessione.post(
+        response = await self._async_post(
             c.Collegamenti.bacheca_leggi.format(self._id, codice, id_),
             headers=self.__intestazione()
         )
@@ -335,16 +342,19 @@ class Utente(object):
             await self.accedi()
 
         session = requests.Session()
-        session.post(
-            url = "https://web.spaggiari.eu/auth-p7/app/default/AuthApi4.php?a=aLoginPwd",
-            data = {"cid": None, "uid":self._id, "pwd":self.password, "pin": None, "target":None}
+        await asyncio.to_thread(
+            session.post,
+            url="https://web.spaggiari.eu/auth-p7/app/default/AuthApi4.php?a=aLoginPwd",
+            data={"cid": None, "uid": self._id, "pwd": self.password, "pin": None, "target": None}
         )
-        session.post(
-            url = "https://web.spaggiari.eu/sif/app/default/bacheca_personale.php",
-            data = {"action" : "get_comunicazioni", "cerca": None, "ncna" : 1 , "tipo_com":None}
-        ) # Anche se dubito che questo serva
-        response = session.get(
-            url = c.Collegamenti.bacheca_allega_esterno.format(id_),
+        await asyncio.to_thread(
+            session.post,
+            url="https://web.spaggiari.eu/sif/app/default/bacheca_personale.php",
+            data={"action": "get_comunicazioni", "cerca": None, "ncna": 1, "tipo_com": None}
+        )
+        response = await asyncio.to_thread(
+            session.get,
+            url=c.Collegamenti.bacheca_allega_esterno.format(id_),
         )
         if (response.status_code == 200):
             return response.content
@@ -354,7 +364,7 @@ class Utente(object):
     async def bacheca_allega_(self, codice: str, id_: int) -> bytes:
         if (not self.connesso):
             await self.accedi()
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.bacheca_allega.format(self._id, codice, id_),
             headers=self.__intestazione()
         )
@@ -369,7 +379,7 @@ class Utente(object):
         # Sembra che ritorni sempre una lista vuota
         if (not self.connesso):
             await self.accedi()
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.lezioni.format(self._id),
             headers=self.__intestazione()
         )
@@ -385,7 +395,7 @@ class Utente(object):
         
         if (not self.connesso):
             await self.accedi()
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.lezioni_giorno.format(self._id, giorno.replace('-', '')),
             headers=self.__intestazione()
         )
@@ -406,7 +416,7 @@ class Utente(object):
 
         if (not self.connesso):
             await self.accedi()
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.lezioni_da_a.format(
                 self._id,
                 inizio.replace('-', ''),
@@ -431,7 +441,7 @@ class Utente(object):
 
         if (not self.connesso):
             await self.accedi()
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.lezioni_da_a_materia.format(
                 self._id,
                 inizio.replace('-', ''),
@@ -450,7 +460,7 @@ class Utente(object):
         if (not self.connesso):
             await self.accedi()
     
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.calendario.format(self._id),
             headers=self.__intestazione()
         )
@@ -472,7 +482,7 @@ class Utente(object):
 
         if (not self.connesso):
             await self.accedi()
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.calendario_da_a.format(
                 self._id,
                 inizio.replace('-', ''),
@@ -491,7 +501,7 @@ class Utente(object):
         if (not self.connesso):
             await self.accedi()
     
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.libri.format(self._id),
             headers=self.__intestazione()
         )
@@ -506,7 +516,7 @@ class Utente(object):
         if (not self.connesso):
             await self.accedi()
     
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.carta.format(self._id),
             headers=self.__intestazione()
         )
@@ -521,7 +531,7 @@ class Utente(object):
         if (not self.connesso):
             await self.accedi()
         
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.voti.format(self._id),
             headers=self.__intestazione()
         )
@@ -536,7 +546,7 @@ class Utente(object):
         if (not self.connesso):
             await self.accedi()
         
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.periodi.format(self._id),
             headers=self.__intestazione()
         )
@@ -551,7 +561,7 @@ class Utente(object):
         if (not self.connesso):
             await self.accedi()
         
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.materie.format(self._id),
             headers=self.__intestazione()
         )
@@ -566,7 +576,7 @@ class Utente(object):
         if (not self.connesso):
             await self.accedi()
         
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.note.format(self._id),
             headers=self.__intestazione()
         )
@@ -581,7 +591,7 @@ class Utente(object):
         if (not self.connesso):
             await self.accedi()
 
-        response = self._sessione.post(
+        response = await self._async_post(
             c.Collegamenti.leggi_nota.format(self._id, tipo, id_),
             headers=self.__intestazione()
         )
@@ -613,7 +623,7 @@ class Utente(object):
         if (not self.connesso):
             await self.accedi()
 
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.panoramica_da_a.format(
                 self._id,
                 inizio.replace('-', ''),
@@ -630,7 +640,7 @@ class Utente(object):
         if (not self.connesso):
             await self.accedi()
 
-        response = self._sessione.get(
+        response = await self._async_get(
             c.Collegamenti.avatar.format(self._id),
             headers=self.__intestazione()
         )

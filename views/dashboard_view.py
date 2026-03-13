@@ -1,7 +1,6 @@
 import asyncio
 from datetime import date, datetime, timedelta
 import flet as ft
-from services.classeviva_service import classeviva_service
 
 # Compatibility fallback for different Flet versions
 colors = getattr(ft, "colors", getattr(ft, "Colors", None))
@@ -9,10 +8,11 @@ icons = getattr(ft, "Icons", getattr(ft, "icons", None))
 
 
 class DashboardView(ft.Column):
-    def __init__(self, page: ft.Page, on_logout):
+    def __init__(self, page: ft.Page, on_logout, service):
         super().__init__()
         self.main_page = page
         self.on_logout = on_logout
+        self.service = service
         self.expand = True
 
         self.current_tab = 0
@@ -133,7 +133,7 @@ class DashboardView(ft.Column):
         self.error_text.visible = False
         self.main_page.update()
 
-        payload = await classeviva_service.get_registro_completo(force_refresh=force_refresh)
+        payload = await self.service.get_registro_completo(force_refresh=force_refresh)
         if payload:
             self.data = payload
 
@@ -161,7 +161,7 @@ class DashboardView(ft.Column):
         else:
             self._render_altro()
 
-        self.error_text.value = classeviva_service.error_message or ""
+        self.error_text.value = self.service.error_message or ""
         self.error_text.visible = bool(self.error_text.value)
         self.main_page.update()
 

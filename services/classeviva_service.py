@@ -23,11 +23,7 @@ class ClassevivaService:
         try:
             self.utente = Utente(username, password)
             await self.utente.accedi()
-            
-            if not self.utente.stato:
-                self.is_logged_in = False
-                self.error_message = "Login fallito. Controlla le credenziali."
-                return False
+            # accedi() raises an exception on failure; if we reach here, login succeeded
 
             # Force recovery of ID and sanitize it to be strictly numeric
             raw_id = None
@@ -55,14 +51,20 @@ class ClassevivaService:
             
             self.is_logged_in = True
             self.error_message = None
-            
+
             # Pre-fetch all data immediately after login
             await self.prefetch_all()
-            
+
             return True
         except Exception as e:
             self.is_logged_in = False
-            self.error_message = f"Errore durante il login: {str(e)}"
+            err = str(e)
+            if "422" in err or "non è corretta" in err or "PasswordNonValida" in type(e).__name__:
+                self.error_message = "Credenziali non valide. Controlla ID e password."
+            elif "ConnectionError" in type(e).__name__ or "Timeout" in type(e).__name__:
+                self.error_message = "Impossibile raggiungere il server Classeviva. Riprova tra qualche istante."
+            else:
+                self.error_message = f"Errore durante il login: {err}"
             return False
 
     async def prefetch_all(self):

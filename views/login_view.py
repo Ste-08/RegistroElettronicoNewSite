@@ -1,15 +1,15 @@
 import flet as ft
-from services.classeviva_service import classeviva_service
 
 # Compatibility fallback for different Flet versions
 colors = getattr(ft, "colors", getattr(ft, "Colors", None))
 icons = getattr(ft, "Icons", getattr(ft, "icons", None)) # Prefer Icons (proxy) over icons (module)
 
 class LoginView(ft.Column):
-    def __init__(self, page: ft.Page, on_login_success):
+    def __init__(self, page: ft.Page, on_login_success, service):
         super().__init__()
         self.main_page = page
         self.on_login_success = on_login_success
+        self.service = service
         
         self.username_field = ft.TextField(
             label="ID Studente",
@@ -90,7 +90,7 @@ class LoginView(ft.Column):
 
         # Phase 1: Authentication
         user_clean = self.username_field.value.strip() if self.username_field.value else ""
-        success = await classeviva_service.login(user_clean, self.password_field.value)
+        success = await self.service.login(user_clean, self.password_field.value)
 
         if success:
             if hasattr(self.main_page, "client_storage"):
@@ -104,7 +104,7 @@ class LoginView(ft.Column):
             # Note: prefetch_all is already called inside classeviva_service.login()
             await self.on_login_success()
         else:
-            self.error_text.value = classeviva_service.error_message
+            self.error_text.value = self.service.error_message
             self.error_text.color = colors.RED_400
             self.login_button.disabled = False
             self.loading_ring.visible = False

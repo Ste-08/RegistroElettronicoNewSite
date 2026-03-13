@@ -2,11 +2,15 @@ import flet as ft
 import asyncio
 from views.login_view import LoginView
 from views.dashboard_view import DashboardView
+from services.classeviva_service import ClassevivaService
 
 # Compatibility fallback for different Flet versions
 colors = getattr(ft, "colors", getattr(ft, "Colors", None))
 
 async def main(page: ft.Page):
+    # Per-session service: each browser session gets its own independent instance
+    service = ClassevivaService()
+
     page.title = "Classeviva Web"
     
     # Load settings from storage safely
@@ -39,7 +43,7 @@ async def main(page: ft.Page):
 
     async def navigate_to_dashboard():
         page.controls.clear()
-        page.add(DashboardView(page, on_logout=logout))
+        page.add(DashboardView(page, on_logout=logout, service=service))
         page.update()
 
     async def logout(e):
@@ -48,7 +52,7 @@ async def main(page: ft.Page):
             page.client_storage.remove("saved_pass")
             page.client_storage.remove("remember_me")
         page.controls.clear()
-        page.add(LoginView(page, on_login_success=navigate_to_dashboard))
+        page.add(LoginView(page, on_login_success=navigate_to_dashboard, service=service))
         page.update()
 
     icons = getattr(ft, "icons", None)
@@ -80,15 +84,14 @@ async def main(page: ft.Page):
             )
             page.update()
 
-            from services.classeviva_service import classeviva_service
-            success = await classeviva_service.login(user, pwd)
+            success = await service.login(user, pwd)
             if success:
                 await navigate_to_dashboard()
                 return
         
         # Fallback to LoginView
         page.controls.clear()
-        page.add(LoginView(page, on_login_success=navigate_to_dashboard))
+        page.add(LoginView(page, on_login_success=navigate_to_dashboard, service=service))
         page.update()
 
     # Start the check

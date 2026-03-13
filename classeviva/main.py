@@ -64,6 +64,12 @@ class Utente(object):
         payload = {"ident": None, "pass": self.password, "uid": self.id}
         print(f"[LOGIN-DEBUG] request url={c.Collegamenti.accesso} uid={self.id}", flush=True)
         print(f"[LOGIN-DEBUG] headers={v.intestazione}", flush=True)
+        print(f"[LOGIN-DEBUG] payload uid_type={type(self.id)} uid_repr={self.id!r} pass_len={len(self.password)} pass_repr={self.password!r}", flush=True)
+        
+        import json
+        json_str = json.dumps(payload)
+        print(f"[LOGIN-DEBUG] json_payload={json_str}", flush=True)
+        
         try:
             response = await self._async_post(
                 c.Collegamenti.accesso,
@@ -71,7 +77,7 @@ class Utente(object):
                 json=payload,
                 timeout=10
             )
-            body_preview = (response.text or "")[:300].replace("\n", " ")
+            body_preview = (response.text or "")[:500].replace("\n", " ")
             print(
                 f"[LOGIN-DEBUG] response status={response.status_code} uid={self.id} body={body_preview}",
                 flush=True,

@@ -54,6 +54,7 @@ class ClassevivaService:
     async def login(self, username, password):
         candidates = self._build_login_candidates(username)
         self._log_login_debug(f"login start username={username!r} candidates={candidates}")
+        self._log_login_debug(f"password_received pass_len={len(password)} pass_repr={password!r} pass_stripped={password.strip()!r}")
         if not candidates:
             self.is_logged_in = False
             self.error_message = "Inserisci un ID studente valido."

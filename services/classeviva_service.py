@@ -19,10 +19,58 @@ class ClassevivaService:
         self.didattica_cached = []
         self.periodi_cached = []
 
+    def _build_login_candidates(self, username):
+        raw = (username or "").strip()
+        if not raw:
+            return []
+
+        upper = raw.upper()
+        digits = "".join(re.findall(r"\d+", raw))
+
+        candidates = []
+        for value in [raw, upper]:
+            if value and value not in candidates:
+                candidates.append(value)
+
+        # If user typed only digits, try school prefixes commonly used by Classeviva.
+        if digits and digits == raw:
+            for pref in ("S", "G"):
+                candidate = f"{pref}{digits}"
+                if candidate not in candidates:
+                    candidates.append(candidate)
+
+        return candidates
+
     async def login(self, username, password):
+        candidates = self._build_login_candidates(username)
+        if not candidates:
+            self.is_logged_in = False
+            self.error_message = "Inserisci un ID studente valido."
+            return False
+
+        last_error = None
+        for candidate in candidates:
+            try:
+                self.utente = Utente(candidate, password)
+                await self.utente.accedi()
+                last_error = None
+                break
+            except Exception as e:
+                last_error = e
+                continue
+
+        if self.utente is None or last_error is not None:
+            self.is_logged_in = False
+            err = str(last_error) if last_error else ""
+            if "422" in err or "non è corretta" in err or "PasswordNonValida" in type(last_error).__name__:
+                self.error_message = "Credenziali non valide. Prova ID con prefisso S/G (es. S123456) e password corretta."
+            elif "ConnectionError" in type(last_error).__name__ or "Timeout" in type(last_error).__name__:
+                self.error_message = "Impossibile raggiungere il server Classeviva. Riprova tra qualche istante."
+            else:
+                self.error_message = f"Errore durante il login: {err}"
+            return False
+
         try:
-            self.utente = Utente(username, password)
-            await self.utente.accedi()
             # accedi() raises an exception on failure; if we reach here, login succeeded
 
             # Force recovery of ID and sanitize it to be strictly numeric

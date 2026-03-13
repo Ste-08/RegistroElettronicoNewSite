@@ -62,13 +62,17 @@ class Utente(object):
         if (self.connesso):
             return
         payload = {"ident": None, "pass": self.password, "uid": self.id}
-        print(f"[DEBUG] Richiesta login a {c.Collegamenti.accesso}...")
+        print(f"[LOGIN-DEBUG] request url={c.Collegamenti.accesso} uid={self.id}", flush=True)
         response = await self._async_post(
             c.Collegamenti.accesso,
             headers=v.intestazione,
             json=payload
         )
-        print(f"[DEBUG] Risposta login: {response.status_code}")
+        body_preview = (response.text or "")[:300].replace("\n", " ")
+        print(
+            f"[LOGIN-DEBUG] response status={response.status_code} uid={self.id} body={body_preview}",
+            flush=True,
+        )
         if (response.status_code == 200):
             self._dati = response.json()
             self.inizio = datetime.fromisoformat(self._dati["release"])
@@ -78,10 +82,10 @@ class Utente(object):
             self.fine = datetime.fromisoformat(self._dati["expire"])
             self._token = self._dati["token"]
         elif (response.status_code == 422):
-            print(f"[DEBUG] Errore 422: Password non valida per utente {self.id}")
+            print(f"[LOGIN-DEBUG] invalid credentials status=422 uid={self.id}", flush=True)
             raise e.PasswordNonValida(f"La password inserita per {self.id} non è corretta.")
         else:
-            print(f"[DEBUG] Errore HTTP {response.status_code}: {response.text}")
+            print(f"[LOGIN-DEBUG] unexpected status={response.status_code} uid={self.id}", flush=True)
             e.sollevaErroreHTTP(response=response)
 
     # https://github.com/Lioydiano/Classeviva-Official-Endpoints/blob/master/Documents/documents.md

@@ -19,6 +19,10 @@ class ClassevivaService:
         self.didattica_cached = []
         self.periodi_cached = []
 
+    def _log_login_debug(self, message):
+        # Print with flush=True so logs are immediately visible on Render.
+        print(f"[LOGIN-DEBUG] {message}", flush=True)
+
     def _build_login_candidates(self, username):
         raw = (username or "").strip()
         if not raw:
@@ -43,25 +47,35 @@ class ClassevivaService:
 
     async def login(self, username, password):
         candidates = self._build_login_candidates(username)
+        self._log_login_debug(f"login start username={username!r} candidates={candidates}")
         if not candidates:
             self.is_logged_in = False
             self.error_message = "Inserisci un ID studente valido."
+            self._log_login_debug("login aborted: no valid username candidates")
             return False
 
         last_error = None
         for candidate in candidates:
             try:
+                self._log_login_debug(f"attempt uid={candidate!r}")
                 self.utente = Utente(candidate, password)
                 await self.utente.accedi()
                 last_error = None
+                self._log_login_debug(f"attempt success uid={candidate!r}")
                 break
             except Exception as e:
                 last_error = e
+                self._log_login_debug(
+                    f"attempt failed uid={candidate!r} type={type(e).__name__} msg={str(e)[:250]}"
+                )
                 continue
 
         if self.utente is None or last_error is not None:
             self.is_logged_in = False
             err = str(last_error) if last_error else ""
+            self._log_login_debug(
+                f"login failed after {len(candidates)} attempts type={type(last_error).__name__ if last_error else 'Unknown'} msg={err[:250]}"
+            )
             if "422" in err or "non è corretta" in err or "PasswordNonValida" in type(last_error).__name__:
                 self.error_message = "Credenziali non valide. Formati ID provati: numerico, S+ID, G+ID. Verifica password e codice studente." 
             elif "ConnectionError" in type(last_error).__name__ or "Timeout" in type(last_error).__name__:
@@ -101,6 +115,7 @@ class ClassevivaService:
             
             self.is_logged_in = True
             self.error_message = None
+            self._log_login_debug(f"login success normalized_id={self.utente.id!r}")
 
             # Pre-fetch all data immediately after login
             await self.prefetch_all()
@@ -109,6 +124,9 @@ class ClassevivaService:
         except Exception as e:
             self.is_logged_in = False
             err = str(e)
+            self._log_login_debug(
+                f"post-login flow failed type={type(e).__name__} msg={err[:250]}"
+            )
             if "422" in err or "non è corretta" in err or "PasswordNonValida" in type(e).__name__:
                 self.error_message = "Credenziali non valide. Controlla ID e password."
             elif "ConnectionError" in type(e).__name__ or "Timeout" in type(e).__name__:

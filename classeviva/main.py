@@ -697,6 +697,7 @@ class Utente(object):
 
     @property
     def connesso(self) -> bool:
+        if hasattr(self, "inizio") and self.inizio:
             # Ensure current time is consistent (UTC aware)
             now = datetime.now(timezone.utc)
             passati = (now - self.inizio).total_seconds()

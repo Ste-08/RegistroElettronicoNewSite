@@ -28,12 +28,12 @@ class ClassevivaService:
         digits = "".join(re.findall(r"\d+", raw))
 
         candidates = []
-        for value in [raw, upper]:
+        for value in [raw, upper, digits]:
             if value and value not in candidates:
                 candidates.append(value)
 
-        # If user typed only digits, try school prefixes commonly used by Classeviva.
-        if digits and digits == raw:
+        # Always try school prefixes commonly used by Classeviva when numeric part exists.
+        if digits:
             for pref in ("S", "G"):
                 candidate = f"{pref}{digits}"
                 if candidate not in candidates:
@@ -63,7 +63,7 @@ class ClassevivaService:
             self.is_logged_in = False
             err = str(last_error) if last_error else ""
             if "422" in err or "non è corretta" in err or "PasswordNonValida" in type(last_error).__name__:
-                self.error_message = "Credenziali non valide. Prova ID con prefisso S/G (es. S123456) e password corretta."
+                self.error_message = "Credenziali non valide. Formati ID provati: numerico, S+ID, G+ID. Verifica password e codice studente." 
             elif "ConnectionError" in type(last_error).__name__ or "Timeout" in type(last_error).__name__:
                 self.error_message = "Impossibile raggiungere il server Classeviva. Riprova tra qualche istante."
             else:

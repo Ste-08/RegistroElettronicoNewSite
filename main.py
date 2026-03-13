@@ -29,10 +29,16 @@ async def main(page: ft.Page):
         color_scheme_seed=seed_color
     )
     
-    page.window_resizable = True
-    # If we are on desktop, we can still set a decent initial size but without limits
-    page.window_width = 450
-    page.window_height = 800
+    # Prefer modern window API; keep backward compatibility for older Flet versions.
+    if hasattr(page, "window") and page.window is not None:
+        page.window.resizable = True
+        # If we are on desktop, we can still set a decent initial size but without limits
+        page.window.width = 450
+        page.window.height = 800
+    else:
+        page.window_resizable = True
+        page.window_width = 450
+        page.window_height = 800
     
     # bgcolor will follow theme surface
     page.bgcolor = None 

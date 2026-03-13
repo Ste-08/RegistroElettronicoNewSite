@@ -63,16 +63,22 @@ class Utente(object):
             return
         payload = {"ident": None, "pass": self.password, "uid": self.id}
         print(f"[LOGIN-DEBUG] request url={c.Collegamenti.accesso} uid={self.id}", flush=True)
-        response = await self._async_post(
-            c.Collegamenti.accesso,
-            headers=v.intestazione,
-            json=payload
-        )
-        body_preview = (response.text or "")[:300].replace("\n", " ")
-        print(
-            f"[LOGIN-DEBUG] response status={response.status_code} uid={self.id} body={body_preview}",
-            flush=True,
-        )
+        print(f"[LOGIN-DEBUG] headers={v.intestazione}", flush=True)
+        try:
+            response = await self._async_post(
+                c.Collegamenti.accesso,
+                headers=v.intestazione,
+                json=payload,
+                timeout=10
+            )
+            body_preview = (response.text or "")[:300].replace("\n", " ")
+            print(
+                f"[LOGIN-DEBUG] response status={response.status_code} uid={self.id} body={body_preview}",
+                flush=True,
+            )
+        except Exception as ex:
+            print(f"[LOGIN-DEBUG] exception during POST request: {type(ex).__name__}: {str(ex)[:200]}", flush=True)
+            raise
         if (response.status_code == 200):
             self._dati = response.json()
             self.inizio = datetime.fromisoformat(self._dati["release"])

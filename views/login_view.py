@@ -89,12 +89,13 @@ class LoginView(ft.Column):
         self.main_page.update()
 
         # Phase 1: Authentication
-        success = await classeviva_service.login(self.username_field.value, self.password_field.value)
+        user_clean = self.username_field.value.strip() if self.username_field.value else ""
+        success = await classeviva_service.login(user_clean, self.password_field.value)
 
         if success:
             if hasattr(self.main_page, "client_storage"):
                 if self.remember_me_checkbox.value:
-                    self.main_page.client_storage.set("saved_user", self.username_field.value)
+                    self.main_page.client_storage.set("saved_user", user_clean)
                     self.main_page.client_storage.set("saved_pass", self.password_field.value)
                     self.main_page.client_storage.set("remember_me", True)
             

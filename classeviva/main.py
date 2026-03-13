@@ -54,20 +54,27 @@ class Utente(object):
     async def accedi(self) -> None:
         if (self.connesso):
             return
-        dati = f'{{"ident": null, "pass": "{self.password}", "uid": "{self.id}"}}'
+        payload = {"ident": None, "pass": self.password, "uid": self.id}
+        print(f"[DEBUG] Richiesta login a {c.Collegamenti.accesso}...")
         response = self._sessione.post(
             c.Collegamenti.accesso,
             headers=v.intestazione,
-            data=dati
+            json=payload
         )
+        print(f"[DEBUG] Risposta login: {response.status_code}")
         if (response.status_code == 200):
             self._dati = response.json()
             self.inizio = datetime.fromisoformat(self._dati["release"])
+            # Ensure inizio is offset-aware for comparison if it's not already
+            if self.inizio.tzinfo is None:
+                self.inizio = self.inizio.replace(tzinfo=timezone.utc)
             self.fine = datetime.fromisoformat(self._dati["expire"])
             self._token = self._dati["token"]
         elif (response.status_code == 422):
-            raise e.PasswordNonValida(f"La password di {self} non combacia")
+            print(f"[DEBUG] Errore 422: Password non valida per utente {self.id}")
+            raise e.PasswordNonValida(f"La password inserita per {self.id} non è corretta.")
         else:
+            print(f"[DEBUG] Errore HTTP {response.status_code}: {response.text}")
             e.sollevaErroreHTTP(response=response)
 
     # https://github.com/Lioydiano/Classeviva-Official-Endpoints/blob/master/Documents/documents.md
@@ -690,8 +697,9 @@ class Utente(object):
 
     @property
     def connesso(self) -> bool:
-        if (hasattr(self, "inizio")):
-            passati = (datetime.now(timezone.utc) - self.inizio).total_seconds()
+            # Ensure current time is consistent (UTC aware)
+            now = datetime.now(timezone.utc)
+            passati = (now - self.inizio).total_seconds()
             return passati < v.TEMPO_CONNESSIONE
         return False
 

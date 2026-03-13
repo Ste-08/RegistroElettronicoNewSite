@@ -30,7 +30,7 @@ class LoginView(ft.Column):
         )
         
         self.login_button = ft.ElevatedButton(
-            text="Accedi",
+            content=ft.Text("Accedi"),
             width=300,
             height=50,
             style=ft.ButtonStyle(

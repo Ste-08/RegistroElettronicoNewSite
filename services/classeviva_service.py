@@ -28,13 +28,16 @@ class ClassevivaService:
         if not raw:
             return []
 
+        # ALWAYS try the raw input first (e.g., S10376729C as typed)
+        candidates = [raw]
+        
         upper = raw.upper()
+        if upper and upper not in candidates:
+            candidates.append(upper)
+        
         digits = "".join(re.findall(r"\d+", raw))
-
-        candidates = []
-        for value in [raw, upper, digits]:
-            if value and value not in candidates:
-                candidates.append(value)
+        if digits and digits not in candidates:
+            candidates.append(digits)
 
         # Always try school prefixes commonly used by Classeviva when numeric part exists.
         if digits:

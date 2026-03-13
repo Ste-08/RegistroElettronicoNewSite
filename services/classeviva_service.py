@@ -29,25 +29,11 @@ class ClassevivaService:
             return []
 
         # ALWAYS try the raw input first (e.g., S10376729C as typed)
+        # On first attempt, only try the raw - avoid rate limiting from multiple attempts
         candidates = [raw]
         
-        upper = raw.upper()
-        if upper and upper not in candidates:
-            candidates.append(upper)
-        
-        digits = "".join(re.findall(r"\d+", raw))
-        if digits and digits not in candidates:
-            candidates.append(digits)
-
-        # Always try school prefixes commonly used by Classeviva when numeric part exists.
-        if digits:
-            for pref in ("S", "G"):
-                candidate = f"{pref}{digits}"
-                if candidate not in candidates:
-                    candidates.append(candidate)
-
         # Debug: log the exact candidates being generated
-        self._log_login_debug(f"_build_login_candidates input={username!r} raw={raw!r} upper={upper!r} digits={digits!r} final_candidates={candidates}")
+        self._log_login_debug(f"_build_login_candidates input={username!r} raw={raw!r} final_candidates={candidates}")
         
         return candidates
 
@@ -62,9 +48,9 @@ class ClassevivaService:
             return False
 
         last_error = None
-        for candidate in candidates:
+        for idx, candidate in enumerate(candidates):
             try:
-                self._log_login_debug(f"attempt uid={candidate!r}")
+                self._log_login_debug(f"attempt #{idx+1}/{len(candidates)} uid={candidate!r}")
                 self.utente = Utente(candidate, password)
                 await self.utente.accedi()
                 last_error = None
@@ -75,6 +61,11 @@ class ClassevivaService:
                 self._log_login_debug(
                     f"attempt failed uid={candidate!r} type={type(e).__name__} msg={str(e)[:250]}"
                 )
+                # Add a small delay before next attempt to avoid rate limiting
+                if idx < len(candidates) - 1:
+                    self._log_login_debug(f"waiting 1 second before next attempt...")
+                    import asyncio
+                    await asyncio.sleep(1)
                 continue
 
         if self.utente is None or last_error is not None:

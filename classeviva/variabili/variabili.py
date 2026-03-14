@@ -8,10 +8,9 @@ TEMPO_CONNESSIONE: int = 5400
 
 # Constante che indica l'intestazione per le richieste
 # Reverted to App User-Agent and ApiKey because the REST API requires them.
-# The previous browser UA caused the "202:CvvRestApi/apikey.2: Z-Dev-Apikey" error.
 intestazione: dict[str, str] = {
     "Content-Type": "application/json",
-    "User-Agent": "zApps/4.19.0",
+    "User-Agent": "zApps/4.28.4",
     "Z-Dev-Apikey": "+z+7/Ht=2^@t+2",
     "Accept": "application/json",
 }

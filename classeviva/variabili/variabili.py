@@ -7,20 +7,13 @@ TEMPO_CONNESSIONE: int = 5400
 
 
 # Constante che indica l'intestazione per le richieste
-# Using more realistic browser headers instead of Android UA which may be blocked
-# Removed Z-Dev-ApiKey when using browser UA since Classeviva validates API keys per user-agent
+# Reverted to App User-Agent and ApiKey because the REST API requires them.
+# The previous browser UA caused the "202:CvvRestApi/apikey.2: Z-Dev-Apikey" error.
 intestazione: dict[str, str] = {
-    "content-type": "application/json",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Origin": "https://web.spaggiari.eu",
-    "Referer": "https://web.spaggiari.eu/",
-    "Sec-Fetch-Dest": "empty",
-    "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Site": "same-origin",
+    "Content-Type": "application/json",
+    "User-Agent": "zApps/4.19.0",
+    "Z-Dev-Apikey": "+z+7/Ht=2^@t+2",
+    "Accept": "application/json",
 }
 
 

@@ -1,0 +1,35 @@
+name: Build and Export iOS App (IPA)
+
+on:
+  workflow_dispatch:  # Questo ci permette di avviarlo manualmente dal sito di GitHub
+
+jobs:
+  build_ios:
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install Flet
+        run: |
+          python -m pip install --upgrade pip
+          pip install flet==0.25.2 requests  # Mettiamo le stesse librerie che hai in requirements.txt
+
+      - name: Build IPA tramite Flet
+        run: |
+          # Flet si occuperà di installare dietro le quinte Flutter e tutto il necessario
+          # L'opzione --no-codesign è cruciale: ignora la firma di Apple per permettere il sideload
+          flet build ipa --no-codesign
+          
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: RegistroElettronico-iOS
+          path: build/ipa/*.ipa
+          retention-days: 5

@@ -1,5 +1,6 @@
 import flet as ft
 import asyncio
+import os
 from views.login_view import LoginView
 from views.dashboard_view import DashboardView
 from services.classeviva_service import ClassevivaService
@@ -111,8 +112,13 @@ async def main(page: ft.Page):
 
 if __name__ == "__main__":
     import os
-    # Use PORT from environment (default 8080) for hosting services
-    port = int(os.getenv("PORT", 8080))
+    # Render sets PORT at runtime (default 10000); expose it
+    port_str = os.getenv("PORT", "8080")
+    if not port_str: # sometimes it returns an empty string
+        port_str = "8080"
+    port = int(port_str)
+    
+    print(f"[INFO] Starting Flet app on host 0.0.0.0 and port {port}")
 
     # Render/headless deployment: enforce web mode when supported by current Flet API.
     app_view = None

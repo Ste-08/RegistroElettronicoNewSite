@@ -10,8 +10,8 @@ TEMPO_CONNESSIONE: int = 5400
 # Reverted to App User-Agent and ApiKey because the REST API requires them.
 intestazione: dict[str, str] = {
     "Content-Type": "application/json",
-    "User-Agent": "zApps/4.28.4",
-    "Z-Dev-Apikey": "+z+7/Ht=2^@t+2",
+    "User-Agent": "CVVS/std/4.1.7 Android/10",
+    "Z-Dev-ApiKey": "Tg1NWEwNGIgIC0K",
     "Accept": "application/json",
 }
 

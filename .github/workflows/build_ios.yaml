@@ -23,13 +23,12 @@ jobs:
 
       - name: Build IPA tramite Flet
         run: |
-          # Flet si occuperà di installare dietro le quinte Flutter e tutto il necessario
-          # L'opzione --no-codesign è cruciale: ignora la firma di Apple per permettere il sideload
-          flet build ipa --no-codesign
+          # Flet applicherà in automatico la mancanza di firma se non forniamo certificati
+          flet build ipa
           
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: RegistroElettronico-iOS
-          path: build/ipa/*.ipa
+          path: build/**/*.ipa
           retention-days: 5

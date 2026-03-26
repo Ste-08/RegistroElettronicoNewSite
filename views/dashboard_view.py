@@ -6,6 +6,20 @@ import flet as ft
 colors = getattr(ft, "colors", getattr(ft, "Colors", None))
 icons = getattr(ft, "Icons", getattr(ft, "icons", None))
 
+# Vivid seed colors: display hex → flet seed name
+SEED_COLOR_MAP = {
+    "#22c55e": "green",
+    "#3b82f6": "blue",
+    "#ef4444": "red",
+    "#a855f7": "purple",
+    "#f97316": "orange",
+    "#14b8a6": "teal",
+    "#ec4899": "pink",
+    "#f59e0b": "amber",
+}
+# Reverse lookup: seed name → hex
+SEED_HEX_MAP = {v: k for k, v in SEED_COLOR_MAP.items()}
+
 
 class DashboardView(ft.Column):
     def __init__(self, page: ft.Page, on_logout, service):
@@ -38,7 +52,7 @@ class DashboardView(ft.Column):
 
         # User preferences with persistence
         self.pref_voto_min = 6.0
-        self.seed_color = "green"
+        self.seed_color = "green"  # flet seed name
         if hasattr(self.main_page, "client_storage"):
             try:
                 self.pref_voto_min = float(self.main_page.client_storage.get("voto_minimo") or 6.0)
@@ -67,20 +81,28 @@ class DashboardView(ft.Column):
             self._nav_item(icons.MORE_HORIZ, 4),
         ]
 
+        self.bottom_nav_container = ft.Container(
+            content=ft.Row(self.nav_items, alignment=ft.MainAxisAlignment.SPACE_AROUND),
+            bgcolor=self._c("#16191f", "#f0f0f0"),
+            border=ft.border.only(top=ft.border.BorderSide(1, self._c("#252a33", "#d0d0d0"))),
+            padding=10,
+        )
         self.controls = [
             self.loading,
             ft.Container(content=self.content, expand=True, padding=0),
             self.error_text,
-            ft.Container(
-                content=ft.Row(self.nav_items, alignment=ft.MainAxisAlignment.SPACE_AROUND),
-                bgcolor="#16191f",
-                border=ft.border.only(top=ft.border.BorderSide(1, "#252a33")),
-                padding=10,
-            ),
+            self.bottom_nav_container,
         ]
 
     def did_mount(self):
         asyncio.create_task(self.load_data())
+
+    def _is_dark(self):
+        return self.main_page.theme_mode == ft.ThemeMode.DARK
+
+    def _c(self, dark_val, light_val):
+        """Return dark_val when in dark mode, light_val when in light mode."""
+        return dark_val if self._is_dark() else light_val
 
     def _nav_item(self, icon, tab_idx):
         return ft.Container(
@@ -94,7 +116,7 @@ class DashboardView(ft.Column):
     def _top_bar(self, title, actions=None):
         actions = actions or []
         return ft.Container(
-            bgcolor="#16191f",
+            bgcolor=self._c("#16191f", "#f5f5f5"),
             padding=ft.padding.only(left=20, right=20, top=16, bottom=16),
             content=ft.Row(
                 [
@@ -109,13 +131,15 @@ class DashboardView(ft.Column):
     def _section_title(self, text):
         return ft.Text(text, size=22, weight=ft.FontWeight.W_500)
 
-    def _card(self, control, padding=14, color="#1a1d24"):
+    def _card(self, control, padding=14, color=None):
+        if color is None:
+            color = self._c("#1a1d24", "#ffffff")
         return ft.Container(
             content=control,
             bgcolor=color,
             padding=padding,
             border_radius=12,
-            border=ft.border.all(1, "#252a33"),
+            border=ft.border.all(1, self._c("#252a33", "#e0e0e0")),
         )
 
     def _fmt_date(self, value):
@@ -166,10 +190,14 @@ class DashboardView(ft.Column):
         self.main_page.update()
 
     def _sync_bottom_nav(self):
+        # Also refresh bottom nav container colors for theme changes
+        self.bottom_nav_container.bgcolor = self._c("#16191f", "#f0f0f0")
+        self.bottom_nav_container.border = ft.border.only(top=ft.border.BorderSide(1, self._c("#252a33", "#d0d0d0")))
+        active_hex = SEED_HEX_MAP.get(self.seed_color, "#22c55e")
         for idx, node in enumerate(self.nav_items):
             is_active = idx == self.current_tab
-            node.bgcolor = "#202630" if is_active else colors.TRANSPARENT
-            node.content.color = "#46d15d" if is_active else "#d0d4da"
+            node.bgcolor = self._c("#202630", "#e0e8ff") if is_active else colors.TRANSPARENT
+            node.content.color = active_hex if is_active else self._c("#d0d4da", "#666666")
 
     def _render_home(self):
         self.content.controls.append(
@@ -178,7 +206,7 @@ class DashboardView(ft.Column):
                 bgcolor=colors.PRIMARY,
                 content=ft.Column(
                     [
-                        ft.Text("Buon pomeriggio, Stefano.", size=26, weight=ft.FontWeight.W_500, color=colors.WHITE),
+                        ft.Text("Buon pomeriggio, Stefano.", size=26, weight=ft.FontWeight.W_500, color="#ffffff"),
                         ft.Text(self._month_label(datetime.now()), size=14, color="#e8f9eb"),
                     ],
                     spacing=6,
@@ -192,14 +220,14 @@ class DashboardView(ft.Column):
         for voto in self.data["voti"][:3]:
             self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._voto_tile(voto)))
         if not self.data["voti"]:
-            self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessun voto disponibile", color="#9aa3af"))))
+            self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessun voto disponibile", color=self._c("#9aa3af", "#888888")))))
 
         self.content.controls.append(ft.Container(padding=ft.padding.only(left=16, right=16), content=self._section_title("Ultime lezioni")))
         lezioni_row = ft.Row(spacing=10, scroll=ft.ScrollMode.AUTO)
         for lesson in self.data.get("lezioni", [])[:4]:
             lezioni_row.controls.append(self._lesson_tile(lesson))
         if not lezioni_row.controls:
-            lezioni_row.controls.append(self._card(ft.Text("Nessuna lezione", color="#9aa3af")))
+            lezioni_row.controls.append(self._card(ft.Text("Nessuna lezione", color=self._c("#9aa3af", "#888888"))))
         self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=lezioni_row))
 
         week_events = self._week_events()
@@ -207,13 +235,13 @@ class DashboardView(ft.Column):
         self.content.controls.append(ft.Container(padding=ft.padding.only(left=16, right=16), content=self._section_title("Compiti della settimana")))
         compiti = [e for e in week_events if e.get("is_compito")]
         if not compiti:
-            self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessun compito questa settimana", color="#9aa3af"))))
+            self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessun compito questa settimana", color=self._c("#9aa3af", "#888888")))))
         for ev in compiti[:4]:
             self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._agenda_event_green(ev)))
 
         self.content.controls.append(ft.Container(padding=ft.padding.only(left=16, right=16), content=self._section_title("Prossimi eventi")))
         if not week_events:
-            self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessun evento nella settimana corrente", color="#9aa3af"))))
+            self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessun evento nella settimana corrente", color=self._c("#9aa3af", "#888888")))))
         for ev in week_events[:4]:
             self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._agenda_event_green(ev)))
 
@@ -236,7 +264,7 @@ class DashboardView(ft.Column):
         if self.voti_filter == "recenti":
             # Recenti: show only latest grades list, without any average cards.
             if not voti_filtered:
-                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessun voto nel filtro selezionato", color="#9aa3af"))))
+                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessun voto nel filtro selezionato", color=self._c("#9aa3af", "#888888")))))
             for voto in voti_filtered:
                 self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._voto_tile(voto)))
             return
@@ -251,7 +279,7 @@ class DashboardView(ft.Column):
 
         subjects = self._subject_averages(voti_filtered)
         if not subjects:
-            self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessuna media disponibile", color="#9aa3af"))))
+            self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessuna media disponibile", color=self._c("#9aa3af", "#888888")))))
             return
 
         for subject in subjects:
@@ -282,9 +310,9 @@ class DashboardView(ft.Column):
 
         month_row = ft.Row(
             [
-                ft.IconButton(icons.CHEVRON_LEFT, icon_color=colors.WHITE, on_click=self._prev_month),
+                ft.IconButton(icons.CHEVRON_LEFT, on_click=self._prev_month),
                 ft.Text(self._month_label(self.current_month), size=18, weight=ft.FontWeight.W_500),
-                ft.IconButton(icons.CHEVRON_RIGHT, icon_color=colors.WHITE, on_click=self._next_month),
+                ft.IconButton(icons.CHEVRON_RIGHT, on_click=self._next_month),
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
         )
@@ -303,12 +331,12 @@ class DashboardView(ft.Column):
         self.content.controls.append(
             ft.Container(
                 padding=ft.padding.symmetric(horizontal=16),
-                content=ft.Text(f"Giorno selezionato: {day_label}", size=13, color="#b4bbc8"),
+                content=ft.Text(f"Giorno selezionato: {day_label}", size=13, color=self._c("#b4bbc8", "#666666")),
             )
         )
 
         if not events:
-            self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessun evento trovato", color="#9aa3af"))))
+            self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessun evento trovato", color=self._c("#9aa3af", "#888888")))))
         for ev in events[:20]:
             self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._agenda_event_green(ev)))
 
@@ -334,7 +362,7 @@ class DashboardView(ft.Column):
             bacheca = [x for x in bacheca if q in (x.get("titolo") or "").lower()]
 
         if not bacheca:
-            self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessuna comunicazione", color="#9aa3af"))))
+            self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessuna comunicazione", color=self._c("#9aa3af", "#888888")))))
             return
 
         for item in bacheca:
@@ -391,7 +419,7 @@ class DashboardView(ft.Column):
             self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._section_title("Lezioni")))
             rows = self.data.get("lezioni", [])
             if not rows:
-                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessuna lezione disponibile", color="#9aa3af"))))
+                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessuna lezione disponibile", color=self._c("#9aa3af", "#888888")))))
             for row in rows:
                 self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._lesson_row(row)))
 
@@ -399,17 +427,17 @@ class DashboardView(ft.Column):
             self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._section_title("Materiale didattico")))
             rows = self.data.get("didattica", [])
             if not rows:
-                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessun materiale disponibile", color="#9aa3af"))))
+                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessun materiale disponibile", color=self._c("#9aa3af", "#888888")))))
             for row in rows:
                 title = row.get("titolo") or "Materiale"
                 meta = f"{row.get('materia') or 'Materia'} - {self._fmt_date(row.get('data'))}"
-                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Column([ft.Text(title, size=17, weight=ft.FontWeight.W_500), ft.Text(meta, size=12, color="#b4bbc8")], spacing=4))))
+                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Column([ft.Text(title, size=17, weight=ft.FontWeight.W_500), ft.Text(meta, size=12, color=self._c("#b4bbc8", "#666666"))], spacing=4))))
 
         elif self.altro_section == "assenze":
             self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._section_title("Assenze")))
             rows = self.data.get("assenze", [])
             if not rows:
-                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessuna assenza", color="#9aa3af"))))
+                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessuna assenza", color=self._c("#9aa3af", "#888888")))))
             for row in rows:
                 state = "Giustificata" if row.get("giustificata") else "Da giustificare"
                 self.content.controls.append(
@@ -417,7 +445,7 @@ class DashboardView(ft.Column):
                         padding=ft.padding.symmetric(horizontal=16),
                         content=self._card(
                             ft.Row([
-                                ft.Column([ft.Text(row.get("tipo") or "Assenza", size=17, weight=ft.FontWeight.W_500), ft.Text(self._fmt_date(row.get("data")), size=12, color="#b4bbc8")], spacing=4, expand=True),
+                                ft.Column([ft.Text(row.get("tipo") or "Assenza", size=17, weight=ft.FontWeight.W_500), ft.Text(self._fmt_date(row.get("data")), size=12, color=self._c("#b4bbc8", "#666666"))], spacing=4, expand=True),
                                 ft.Text(state, size=12, color=colors.PRIMARY if row.get("giustificata") else "#ff9f43"),
                             ])
                         ),
@@ -428,7 +456,7 @@ class DashboardView(ft.Column):
             self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._section_title("Note")))
             rows = self.data.get("note", [])
             if not rows:
-                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessuna nota", color="#9aa3af"))))
+                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessuna nota", color=self._c("#9aa3af", "#888888")))))
             for row in rows:
                 self.content.controls.append(
                     ft.Container(
@@ -438,7 +466,7 @@ class DashboardView(ft.Column):
                                 [
                                     ft.Row([
                                         ft.Text(row.get("categoria") or "Nota", weight=ft.FontWeight.W_600, expand=True),
-                                        ft.Text(self._fmt_date(row.get("data")), size=12, color="#b4bbc8"),
+                                        ft.Text(self._fmt_date(row.get("data")), size=12, color=self._c("#b4bbc8", "#666666")),
                                     ]),
                                     ft.Text((row.get("testo") or "Nessun dettaglio").strip(), size=14),
                                 ],
@@ -459,21 +487,21 @@ class DashboardView(ft.Column):
                 grouped.setdefault(weekday, []).append(lesson.get("materia") or "Lezione")
 
             if not grouped:
-                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Orario non disponibile", color="#9aa3af"))))
+                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Orario non disponibile", color=self._c("#9aa3af", "#888888")))))
             for day_name in ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"]:
                 if day_name not in grouped:
                     continue
                 subjects = ", ".join(grouped[day_name][:5])
-                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Row([ft.Text(day_name, width=50), ft.Text(subjects, expand=True, size=14, color="#dce1e8")]))))
+                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Row([ft.Text(day_name, width=50), ft.Text(subjects, expand=True, size=14, color=self._c("#dce1e8", "#333333"))]))))
 
         elif self.altro_section == "scrutini":
             self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._section_title("Scrutini / Periodi")))
             rows = self.data.get("periodi", [])
             if not rows:
-                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessun periodo disponibile", color="#9aa3af"))))
+                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Text("Nessun periodo disponibile", color=self._c("#9aa3af", "#888888")))))
             for row in rows:
                 range_text = f"{self._fmt_date(row.get('inizio'))} - {self._fmt_date(row.get('fine'))}"
-                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Row([ft.Column([ft.Text(row.get("descrizione") or "Periodo", size=17, weight=ft.FontWeight.W_500), ft.Text(range_text, size=12, color="#b4bbc8")], spacing=4, expand=True), ft.Text("Attivo" if row.get("attivo") else "", color=colors.PRIMARY)]))))
+                self.content.controls.append(ft.Container(padding=ft.padding.symmetric(horizontal=16), content=self._card(ft.Row([ft.Column([ft.Text(row.get("descrizione") or "Periodo", size=17, weight=ft.FontWeight.W_500), ft.Text(range_text, size=12, color=self._c("#b4bbc8", "#666666"))], spacing=4, expand=True), ft.Text("Attivo" if row.get("attivo") else "", color=colors.PRIMARY)]))))
 
         elif self.altro_section == "statistiche":
             stats = self.data.get("statistiche", {})
@@ -512,20 +540,24 @@ class DashboardView(ft.Column):
             )
 
             # Application Color
+            current_hex = SEED_HEX_MAP.get(self.seed_color, "#22c55e")
             self.content.controls.append(
                 ft.Container(
                     padding=ft.padding.symmetric(horizontal=16),
                     content=self._card(
                         ft.Column([
                             ft.Text("Colore Applicazione", weight=ft.FontWeight.BOLD),
+                            ft.Text("Scegli il colore principale", size=12, color=self._c("#b4bbc8", "#666666")),
                             ft.Row([
                                 ft.Container(
-                                    width=30, height=30, bgcolor=c, border_radius=15,
-                                    on_click=lambda _, col=c: self._set_seed_color(col),
-                                    border=ft.border.all(2, colors.WHITE if self.seed_color == c else colors.TRANSPARENT),
+                                    width=38, height=38, bgcolor=hex_col, border_radius=19,
+                                    tooltip=seed_name.capitalize(),
+                                    on_click=lambda _, col=seed_name: self._set_seed_color(col),
+                                    border=ft.border.all(3, "#ffffff" if current_hex == hex_col else "transparent"),
+                                    shadow=ft.BoxShadow(blur_radius=8, color=hex_col, spread_radius=1) if current_hex == hex_col else None,
                                     animate=ft.Animation(300, "decelerate")
-                                ) for c in ["green", "blue", "red", "purple", "orange", "teal"]
-                            ], spacing=10, scroll=ft.ScrollMode.ADAPTIVE),
+                                ) for hex_col, seed_name in SEED_COLOR_MAP.items()
+                            ], spacing=12, wrap=True),
                         ], spacing=10)
                     )
                 )
@@ -623,14 +655,15 @@ class DashboardView(ft.Column):
 
         points = ft.Row(alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
         max_count = max(counts) if any(counts) else 1
+        accent = SEED_HEX_MAP.get(self.seed_color, "#22c55e")
         for idx, count in enumerate(counts):
             bar_h = 20 + int((count / max_count) * 54)
             points.controls.append(
                 ft.Column(
                     [
-                        ft.Container(width=3, height=bar_h, bgcolor="#3f4b5d", border_radius=8),
-                        ft.Container(width=12, height=12, border_radius=10, border=ft.border.all(2, "#4fd467"), bgcolor="#1a1d24"),
-                        ft.Text(labels[idx], size=12, color="#dce1e9"),
+                        ft.Container(width=3, height=bar_h, bgcolor=self._c("#3f4b5d", "#c0c8d8"), border_radius=8),
+                        ft.Container(width=12, height=12, border_radius=10, border=ft.border.all(2, accent), bgcolor=self._c("#1a1d24", "#ffffff")),
+                        ft.Text(labels[idx], size=12, color=self._c("#dce1e9", "#555555")),
                     ],
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     spacing=5,
@@ -639,7 +672,7 @@ class DashboardView(ft.Column):
 
         return ft.Container(
             padding=ft.padding.symmetric(horizontal=16),
-            content=self._card(points, color="#171b21", padding=18),
+            content=self._card(points, color=self._c("#171b21", "#f9f9f9"), padding=18),
         )
 
     def _current_week_range(self):
@@ -666,7 +699,7 @@ class DashboardView(ft.Column):
                     ft.Column(
                         [
                             ft.Text(voto.get("materia") or "Materia", size=18, weight=ft.FontWeight.W_500),
-                            ft.Text(self._fmt_date(voto.get("data")), size=12, color="#b4bbc8"),
+                            ft.Text(self._fmt_date(voto.get("data")), size=12, color=self._c("#b4bbc8", "#666666")),
                         ],
                         expand=True,
                         spacing=2,
@@ -712,9 +745,9 @@ class DashboardView(ft.Column):
         return self._card(
             ft.Row(
                 [
-                    ft.Text(self._fmt_date(lesson.get("data")), size=12, color="#b4bbc8"),
+                    ft.Text(self._fmt_date(lesson.get("data")), size=12, color=self._c("#b4bbc8", "#666666")),
                     ft.Text(lesson.get("materia") or "Lezione", weight=ft.FontWeight.W_600, expand=True),
-                    ft.Text((lesson.get("argomento") or "")[:28], size=12, color="#dce1e8"),
+                    ft.Text((lesson.get("argomento") or "")[:28], size=12, color=self._c("#dce1e8", "#444444")),
                 ]
             )
         )
@@ -744,12 +777,12 @@ class DashboardView(ft.Column):
     def _pill(self, text, key):
         active = self.voti_filter == key
         return ft.Container(
-            bgcolor=colors.PRIMARY if active else "#42454d",
+            bgcolor=colors.PRIMARY if active else self._c("#42454d", "#e0e0e0"),
             border_radius=20,
             padding=ft.padding.symmetric(horizontal=14, vertical=8),
             ink=True,
             on_click=lambda e, k=key: self._set_voti_filter(k),
-            content=ft.Text(text, size=16, color=colors.WHITE),
+            content=ft.Text(text, size=16, color="#ffffff" if active else self._c("#dddddd", "#333333")),
         )
 
     def _set_voti_filter(self, key):
@@ -794,7 +827,7 @@ class DashboardView(ft.Column):
             value=value / 10.0,
             stroke_width=10,
             color=colors.PRIMARY,
-            bgcolor="#e7e7e7",
+            bgcolor=self._c("#2e3340", "#e7e7e7"),
         )
 
         trend_values = [v["numero"] for v in filtered_voti if v.get("numero") is not None][:18]
@@ -836,7 +869,7 @@ class DashboardView(ft.Column):
 
         return ft.Column(
             [
-                ft.Text("Media", size=16, color="#f2f4f7"),
+                ft.Text("Media", size=16, color=self._c("#f2f4f7", "#333333")),
                 ft.Container(height=92, alignment=ft.Alignment(-1, 1), content=bars),
             ],
             spacing=8,
@@ -893,7 +926,7 @@ class DashboardView(ft.Column):
             value=val / 10.0,
             stroke_width=7,
             color=color,
-            bgcolor="#ececec",
+            bgcolor=self._c("#2e3340", "#ececec"),
         )
 
         voti_text = ", ".join(row.get("voti", []))
@@ -917,9 +950,9 @@ class DashboardView(ft.Column):
                     ft.Column(
                         [
                             ft.Text(row["materia"], size=20, weight=ft.FontWeight.W_500),
-                            ft.Text(f"Media: {row['media']:.2f}", size=13, color="#d8dee7"),
-                            ft.Text(row["hint"], size=15, color="#e2e6ea"),
-                            ft.Text(f"Voti: {voti_text}", size=12, color="#b9c1cc"),
+                            ft.Text(f"Media: {row['media']:.2f}", size=13, color=self._c("#d8dee7", "#444444")),
+                            ft.Text(row["hint"], size=15, color=self._c("#e2e6ea", "#333333")),
+                            ft.Text(f"Voti: {voti_text}", size=12, color=self._c("#b9c1cc", "#666666")),
                         ],
                         spacing=3,
                     ),
@@ -1008,7 +1041,7 @@ class DashboardView(ft.Column):
                     ft.Column(
                         [
                             ft.Text(item.get("titolo") or "Comunicazione", size=17, weight=ft.FontWeight.W_500),
-                            ft.Text(self._fmt_date(item.get("data")), size=12, color="#b4bbc8"),
+                            ft.Text(self._fmt_date(item.get("data")), size=12, color=self._c("#b4bbc8", "#666666")),
                         ],
                         spacing=3,
                         expand=True,
@@ -1051,7 +1084,7 @@ class DashboardView(ft.Column):
             event_days[day] = event_days.get(day, 0) + 1
 
         week_header = ft.Row(
-            [ft.Text(x, size=12, color="#808793") for x in ["lun", "mar", "mer", "gio", "ven", "sab", "dom"]],
+            [ft.Text(x, size=12, color=self._c("#808793", "#888888")) for x in ["lun", "mar", "mer", "gio", "ven", "sab", "dom"]],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
         )
 
@@ -1090,7 +1123,7 @@ class DashboardView(ft.Column):
                                 bgcolor="#45bb50" if (is_selected or is_today) else colors.TRANSPARENT,
                                 ink=True,
                                 on_click=lambda e, d=day: self._select_day(d),
-                                content=ft.Text(str(day), color=colors.WHITE if (is_selected or is_today) else "#f2f3f5", size=16),
+                                content=ft.Text(str(day), color="#ffffff" if (is_selected or is_today) else self._c("#f2f3f5", "#222222"), size=16),
                             ),
                             dots,
                         ],

@@ -118,7 +118,7 @@ if __name__ == "__main__":
         port_str = "8080"
     port = int(port_str)
     
-    print(f"[INFO] Starting Flet app on host 0.0.0.0 and port {port}")
+    print(f"[INFO] Starting Flet app on host localhost and port {port}")
 
     # Render/headless deployment: enforce web mode when supported by current Flet API.
     app_view = None
@@ -131,16 +131,16 @@ if __name__ == "__main__":
     if hasattr(ft, "run"):
         try:
             if app_view is not None:
-                ft.run(main, host="0.0.0.0", port=port, view=app_view)
+                ft.run(main, host="localhost", port=port, view=app_view)
             else:
-                ft.run(main, host="0.0.0.0", port=port)
+                ft.run(main, host="localhost", port=port)
         except TypeError:
             if app_view is not None:
-                ft.run(target=main, host="0.0.0.0", port=port, view=app_view)
+                ft.run(target=main, host="localhost", port=port, view=app_view)
             else:
-                ft.run(target=main, host="0.0.0.0", port=port)
+                ft.run(target=main, host="localhost", port=port)
     else:
         if app_view is not None:
-            ft.app(target=main, host="0.0.0.0", port=port, view=app_view)
+            ft.app(target=main, host="localhost", port=port, view=app_view)
         else:
-            ft.app(target=main, host="0.0.0.0", port=port)
+            ft.app(target=main, host="localhost", port=port)
